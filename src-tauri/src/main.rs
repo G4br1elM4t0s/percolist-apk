@@ -1194,6 +1194,7 @@ async fn pause_task(task_id: i64, db_state: State<'_, DatabaseState>) -> Result<
     Ok(())
 }
 
+
 #[tauri::command]
 async fn resume_task(task_id: i64, db_state: State<'_, DatabaseState>) -> Result<(), String> {
     let conn = db_state.connection.lock().map_err(|e| e.to_string())?;
@@ -1613,6 +1614,7 @@ async fn get_task_by_id(task_id: i64, db_state: State<'_, DatabaseState>) -> Res
 
 fn main() {
     println!("Iniciando aplicação ClockWise...");
+
 
     // Tentar configurar atalho global
     println!("Criando GlobalHotKeyManager...");

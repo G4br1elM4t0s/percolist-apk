@@ -1,15 +1,17 @@
 import type { RefObject } from "react"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { useTaskStore } from "../store/task.store"
 import type { Task } from "../store/task.store"
 import { invoke } from "@tauri-apps/api/core"
-import { Check, X, Square, Trash2, Lock, Unlock } from "lucide-react"
+import { Check, X, Square, Trash2 } from "lucide-react"
 import { CustomCheckbox } from '../components/CustomCheckbox'
 import DateInput from "./DateInput"
 import { TimeInput } from "./TimeInput"
 
-// Variável global para controlar se há um modal aberto
-let isAnyModalOpen = false
+// Controle global melhorado para diferenciar origem dos modais
+let currentOpenModalId: string | null = null
+let currentCloseFunction: (() => void) | null = null
+let currentModalIsFromListView: boolean = false
 
 interface TaskEditModalProps {
   isOpen: boolean
@@ -17,9 +19,10 @@ interface TaskEditModalProps {
   anchorEl: RefObject<HTMLButtonElement | null>
   task: Task | null
   displayedWorkedTime?: string
+  listViewAnchorRef?: React.RefObject<HTMLDivElement>
 }
 
-export function TaskEditModal({ isOpen, onClose, anchorEl, task, displayedWorkedTime }: TaskEditModalProps) {
+export function TaskEditModal({ isOpen, onClose, anchorEl, task, listViewAnchorRef }: TaskEditModalProps) {
   const { updateTask, completeTask, deleteTask, getTaskTotalWorkedTime } = useTaskStore()
   const [taskName, setTaskName] = useState("")
   const [description, setDescription] = useState("")
@@ -31,6 +34,12 @@ export function TaskEditModal({ isOpen, onClose, anchorEl, task, displayedWorked
   const [shouldCount, setShouldCount] = useState(false)
   const [isTimeEditable, setIsTimeEditable] = useState(false)
   const [workedTime, setWorkedTime] = useState<number>(0)
+  const modalRef = useRef<HTMLDivElement>(null)
+
+  // ID único para este modal baseado na tarefa
+  const modalId = task?.id ? `modal-${task.id}` : null
+  // Determina se este modal é do ListView
+  const isFromListView = !!listViewAnchorRef
 
   // Carregar o tempo trabalhado quando o modal abrir
   useEffect(() => {
@@ -47,22 +56,55 @@ export function TaskEditModal({ isOpen, onClose, anchorEl, task, displayedWorked
     }
   }, [isOpen, task, getTaskTotalWorkedTime])
 
-  // Controlar abertura única do modal
+  // Sistema de troca automática de modais com controle de origem
   useEffect(() => {
-    if (isOpen) {
-      if (isAnyModalOpen) {
-        onClose()
-        return
+    if (isOpen && modalId) {
+      // Se há outro modal aberto
+      if (currentOpenModalId && currentOpenModalId !== modalId && currentCloseFunction) {
+        // Regras de fechamento:
+        // 1. Se o modal atual é do ListView e o anterior não é: fecha o anterior
+        // 2. Se ambos são do mesmo tipo (ListView ou não): fecha o anterior
+        // 3. Se o modal atual não é do ListView e o anterior é: não fecha (mantém ListView)
+
+        const shouldCloseCurrentModal =
+          isFromListView || // Modal do ListView sempre fecha outros
+          (!isFromListView && !currentModalIsFromListView) // Ambos fora do ListView
+
+        if (shouldCloseCurrentModal) {
+          currentCloseFunction()
+          // Pequeno delay para transição suave
+          setTimeout(() => {
+            currentOpenModalId = modalId
+            currentCloseFunction = onClose
+            currentModalIsFromListView = isFromListView
+          }, 50)
+        } else {
+          // Não abre este modal se não deve fechar o anterior
+          onClose()
+          return
+        }
+      } else {
+        // Registra este modal como aberto
+        currentOpenModalId = modalId
+        currentCloseFunction = onClose
+        currentModalIsFromListView = isFromListView
       }
-      isAnyModalOpen = true
-    } else {
-      isAnyModalOpen = false
+    } else if (!isOpen && modalId === currentOpenModalId) {
+      // Limpa o registro quando este modal fechar
+      currentOpenModalId = null
+      currentCloseFunction = null
+      currentModalIsFromListView = false
     }
 
     return () => {
-      isAnyModalOpen = false
+      // Cleanup apenas se este modal estava registrado
+      if (modalId === currentOpenModalId) {
+        currentOpenModalId = null
+        currentCloseFunction = null
+        currentModalIsFromListView = false
+      }
     }
-  }, [isOpen, onClose])
+  }, [isOpen, modalId, onClose, isFromListView])
 
   // Atualizar tempo trabalhado quando o modal abrir e a cada segundo
   useEffect(() => {
@@ -123,8 +165,8 @@ export function TaskEditModal({ isOpen, onClose, anchorEl, task, displayedWorked
     if (isOpen && anchorEl.current) {
       const rect = anchorEl.current.getBoundingClientRect()
       setPosition({
-        top: rect.bottom + 18,
-        left: rect.left
+        top: listViewAnchorRef ? listViewAnchorRef.current.getBoundingClientRect().top :rect.bottom + 18,
+        left:listViewAnchorRef ? listViewAnchorRef.current.getBoundingClientRect().left - 400 : rect.left
       })
     }
   }, [isOpen, anchorEl])
@@ -135,10 +177,67 @@ export function TaskEditModal({ isOpen, onClose, anchorEl, task, displayedWorked
     }
   }
 
+  // Função de validação
+  const validateForm = (): { isValid: boolean; errors: string[] } => {
+    const errors: string[] = []
+
+    // Validar nome da tarefa
+    if (!taskName.trim()) {
+      errors.push("Nome da tarefa é obrigatório")
+    }
+
+    // Validar tempo estimado se estiver editável
+    if (isTimeEditable) {
+      const [hours, minutes, seconds] = timeInput.split(":").map(Number)
+      if (isNaN(hours) || isNaN(minutes) || isNaN(seconds)) {
+        errors.push("Formato de tempo inválido")
+      }
+      if (hours < 0 || minutes < 0 || seconds < 0 || minutes >= 60 || seconds >= 60) {
+        errors.push("Tempo estimado inválido")
+      }
+    }
+
+    // Validar datas se não for indefinido
+    if (!indefiniteEnd) {
+      // Normalizar as datas para comparação (zerar horas, minutos, segundos)
+      const startDateNormalized = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())
+      const endDateNormalized = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate())
+
+      if (endDateNormalized < startDateNormalized) {
+        errors.push("A data final não pode ser anterior à data inicial")
+      }
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    }
+  }
+
   const handleUpdateTask = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
 
+    // Validar formulário antes de submeter
+    const validation = validateForm()
+    if (!validation.isValid) {
+      alert(`Erro de validação:\n${validation.errors.join('\n')}`)
+      return
+    }
+
     if (!taskName.trim() || !task) return
+    const estimated_hours = isTimeEditable ? (() => {
+  const [hours, minutes, seconds] = timeInput.split(":").map(Number)
+  const totalSeconds = hours * 3600 + minutes * 60 + seconds
+  const totalHours = totalSeconds / 3600
+
+  if (totalHours > 99) {
+    return alert("Tempo estimado não pode exceder 99 horas")
+  }
+
+  return totalHours
+})() : task.estimated_hours
+
+
 
     try {
       const updatedTask: Task = {
@@ -149,7 +248,15 @@ export function TaskEditModal({ isOpen, onClose, anchorEl, task, displayedWorked
         estimated_hours: isTimeEditable ? (() => {
           const [hours, minutes, seconds] = timeInput.split(":").map(Number)
           const totalSeconds = hours * 3600 + minutes * 60 + seconds
-          return totalSeconds / 3600
+          const totalHours = totalSeconds / 3600
+
+          if (totalHours > 99) {
+            alert("Tempo estimado não pode exceder 99 horas")
+
+            throw new Error("Tempo estimado não pode exceder 99 horas")
+          }
+
+          return totalHours
         })() : task.estimated_hours,
         worked_hours: workedTime / 3600, // Usando o tempo trabalhado real
         scheduled_date: startDate.toISOString().split("T")[0],
@@ -206,11 +313,31 @@ export function TaskEditModal({ isOpen, onClose, anchorEl, task, displayedWorked
     }
   }, [startDate, endDate, indefiniteEnd, timeInput]);
 
+  // Fechar modal ao clicar fora
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
+        onClose()
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside)
+    } else {
+      document.removeEventListener("mousedown", handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+    }
+  }, [isOpen, onClose])
+
   if (!isOpen || !task) return null
 
   return (
     <div
-      className="fixed z-50 bg-zinc-800/90 backdrop-blur-sm rounded-lg shadow-lg w-96 p-6 task-modal"
+      ref={modalRef}
+      className="fixed select-none z-50 bg-zinc-800/90 backdrop-blur-sm rounded-lg shadow-lg w-96 p-6 task-modal"
       style={{
         top: position.top,
         left: position.left
@@ -237,6 +364,11 @@ export function TaskEditModal({ isOpen, onClose, anchorEl, task, displayedWorked
           onSubmit={e => {
             e.stopPropagation()
             handleUpdateTask(e)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+            }
           }}
           className="flex flex-col gap-4"
           onClick={e => e.stopPropagation()}
@@ -316,23 +448,24 @@ export function TaskEditModal({ isOpen, onClose, anchorEl, task, displayedWorked
               </div>
             </div>
 
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={indefiniteEnd}
-                onChange={e => setIndefiniteEnd(e.target.checked)}
-                className="sr-only"
-              />
-              <div className={`w-3 h-3 border rounded ${indefiniteEnd ? 'bg-[#17FF8B] border-[#17FF8B]' : 'border-white/30'} flex items-center justify-center`}>
-                {indefiniteEnd && <Check className="w-2 h-2 text-black" />}
-              </div>
-              <span className="text-white/70 text-xs">Indefinir data final</span>
-            </label>
-
+         <div className="w-full ">
+  <label className="w-fit flex items-center gap-2 cursor-pointer">
+    <input
+      type="checkbox"
+      checked={indefiniteEnd}
+      onChange={e => setIndefiniteEnd(e.target.checked)}
+      className="sr-only"
+    />
+    <div className={`w-3 h-3 border rounded ${indefiniteEnd ? 'bg-[#17FF8B] border-[#17FF8B]' : 'border-white/30'} flex items-center justify-center`}>
+      {indefiniteEnd && <Check className="w-2 h-2 text-black" />}
+    </div>
+    <span className="text-white/70 text-xs">Indefinir data final</span>
+  </label>
+</div>
             {/* Tempo Total */}
             {!indefiniteEnd && calculateTotalTime && (
               <div className="flex items-center justify-center mt-4">
-                <span className="text-[#F2F2F2] text-sm font-medium">
+                <span className="text-[#F2F2F2] select-none text-sm font-medium">
                   Tempo Total: {calculateTotalTime}
                 </span>
               </div>

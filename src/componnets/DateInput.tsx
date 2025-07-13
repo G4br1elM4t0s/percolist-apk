@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import Calendar from "./Calendar"
@@ -13,6 +13,8 @@ interface DateInputProps {
 
 export default function DateInput({ value, onChange }: DateInputProps) {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
+  const calendarRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLDivElement>(null)
 
   const formattedDate = format(value, "dd/MM/yyyy", {
     locale: ptBR
@@ -25,11 +27,46 @@ export default function DateInput({ value, onChange }: DateInputProps) {
     }
   }
 
+  // Fechar calendário ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        isCalendarOpen &&
+        calendarRef.current &&
+        buttonRef.current &&
+        !calendarRef.current.contains(event.target as Node) &&
+        !buttonRef.current.contains(event.target as Node)
+      ) {
+        setIsCalendarOpen(false)
+      }
+    }
+
+    if (isCalendarOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isCalendarOpen])
+
+  // Handler para fechar ao clicar no overlay
+  const handleOverlayClick = (event: React.MouseEvent) => {
+    if (event.target === event.currentTarget) {
+      setIsCalendarOpen(false)
+    }
+  }
+
   return (
-    <div className="relative flex items-center gap-1">
+    <div className="relative flex items-center gap-1" ref={buttonRef}>
       {isCalendarOpen && (
-        <div className="absolute right-full top-[-210px] mr-2 z-50">
-          <Calendar selected={value} onSelect={handleSelect} />
+        <div 
+          className="fixed inset-0 flex items-center justify-center z-50 bg-black/50"
+          onClick={handleOverlayClick}
+        >
+          <div className="bg-white rounded-lg shadow-lg" ref={calendarRef}>
+            <Calendar selected={value} onSelect={handleSelect} />
+          </div>
         </div>
       )}
 

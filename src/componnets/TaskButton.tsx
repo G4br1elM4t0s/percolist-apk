@@ -11,9 +11,12 @@ interface TaskButtonProps {
   task: Task | TaskWithActiveSession
   index: number
   onDragAction?: (taskId: string, action: "start" | "pause") => void
+  isListView?: boolean
+  listViewAnchorRef?: React.RefObject<HTMLDivElement>
+
 }
 
-export function TaskButton({ task, onDragAction }: TaskButtonProps) {
+export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }: TaskButtonProps) {
   // Detectar se é uma tarefa com sessão Pomodoro ativa
   const taskWithSession = task as TaskWithActiveSession
   const activeSession = taskWithSession.active_session
@@ -193,12 +196,12 @@ export function TaskButton({ task, onDragAction }: TaskButtonProps) {
     setIsDragging(true)
     setDragStartX(e.clientX)
     setCurrentDragX(e.clientX)
-    setLastActionExecuted(null) // Reset do debounce
-
+    // NÃO resetar lastActionExecuted aqui
+    
     const handleMouseMove = (moveEvent: MouseEvent) => {
       setCurrentDragX(moveEvent.clientX)
       const currentDelta = moveEvent.clientX - dragStartX
-
+    
       // Apenas feedback visual durante o movimento
       if (Math.abs(currentDelta) > 30) {
         if (currentDelta > 0) {
@@ -230,18 +233,20 @@ export function TaskButton({ task, onDragAction }: TaskButtonProps) {
         setShouldSwapElements(false)
       }
     }
-
+  
     const handleMouseUp = (upEvent: MouseEvent) => {
       setIsDragging(false)
-      setLastActionExecuted(null) // Reset do debounce
-
+      
       const deltaX = upEvent.clientX - dragStartX
-
+  
       // Executar ação de START quando soltar (movimento para esquerda)
       if (Math.abs(deltaX) > 30 && deltaX < 0) {
         // ESQUERDA = START (executar quando soltar)
         console.log("gabriel aqui start task")
-        if (task.status === "pending" || task.status === "paused") {
+        if (
+          lastActionExecuted !== "start" &&
+          (task.status === "pending" || task.status === "paused")
+        ) {
           // Chamar start_task diretamente e depois recarregar dados
           const startTaskAndReload = async () => {
             try {
@@ -259,20 +264,23 @@ export function TaskButton({ task, onDragAction }: TaskButtonProps) {
             }
           }
           startTaskAndReload()
+          setLastActionExecuted("start")
         }
       }
-
+  
       // Reset visual elements se não houve movimento suficiente
       if (Math.abs(deltaX) < 30) {
         setShouldSwapElements(false)
       }
-
+  
       // Cleanup
       setCurrentDragX(0)
+      // Reset lastActionExecuted após um delay para permitir nova ação
+      setTimeout(() => setLastActionExecuted(null), 500)
       window.removeEventListener("mousemove", handleMouseMove)
       window.removeEventListener("mouseup", handleMouseUp)
     }
-
+  
     window.addEventListener("mousemove", handleMouseMove)
     window.addEventListener("mouseup", handleMouseUp)
   }
@@ -285,14 +293,14 @@ export function TaskButton({ task, onDragAction }: TaskButtonProps) {
     setIsDragging(true)
     setDragStartX(touch.clientX)
     setCurrentDragX(touch.clientX)
-    setLastActionExecuted(null) // Reset do debounce
-
+    // NÃO resetar lastActionExecuted aqui
+  
     const handleTouchMove = (moveEvent: TouchEvent) => {
       const touch = moveEvent.touches[0]
       if (touch) {
         setCurrentDragX(touch.clientX)
         const currentDelta = touch.clientX - dragStartX
-
+  
         // Apenas feedback visual durante o movimento
         if (Math.abs(currentDelta) > 30) {
           if (currentDelta > 0) {
@@ -324,20 +332,22 @@ export function TaskButton({ task, onDragAction }: TaskButtonProps) {
         }
       }
     }
-
+  
     const handleTouchEnd = (endEvent: TouchEvent) => {
       setIsDragging(false)
-      setLastActionExecuted(null) // Reset do debounce
-
+  
       const touch = endEvent.changedTouches[0]
       if (touch) {
         const deltaX = touch.clientX - dragStartX
-
+  
         // Executar ação de START quando soltar (movimento para esquerda)
         if (Math.abs(deltaX) > 30 && deltaX < 0) {
           // ESQUERDA = START (executar quando soltar)
           console.log("gabriel aqui start task")
-          if (task.status === "pending" || task.status === "paused") {
+          if (
+            lastActionExecuted !== "start" &&
+            (task.status === "pending" || task.status === "paused")
+          ) {
             // Chamar start_task diretamente e depois recarregar dados
             const startTaskAndReload = async () => {
               try {
@@ -355,21 +365,24 @@ export function TaskButton({ task, onDragAction }: TaskButtonProps) {
               }
             }
             startTaskAndReload()
+            setLastActionExecuted("start")
           }
         }
-
+  
         // Reset visual elements se não houve movimento suficiente
         if (Math.abs(deltaX) < 30) {
           setShouldSwapElements(false)
         }
       }
-
+  
       // Cleanup
       setCurrentDragX(0)
+      // Reset lastActionExecuted após um delay para permitir nova ação
+      setTimeout(() => setLastActionExecuted(null), 500)
       window.removeEventListener("touchmove", handleTouchMove)
       window.removeEventListener("touchend", handleTouchEnd)
     }
-
+  
     window.addEventListener("touchmove", handleTouchMove, { passive: false })
     window.addEventListener("touchend", handleTouchEnd)
   }
@@ -487,10 +500,13 @@ export function TaskButton({ task, onDragAction }: TaskButtonProps) {
       </div>
 
       <TaskEditModal
+        listViewAnchorRef={listViewAnchorRef}
         isOpen={isEditModalOpen}
         onClose={async () => {
           setIsEditModalOpen(false)
-          await invoke("reset_window_size")
+          if(!isListView && !listViewAnchorRef){
+            await invoke("reset_window_size")
+          }
         }}
         anchorEl={settingsButtonRef}
         task={task}

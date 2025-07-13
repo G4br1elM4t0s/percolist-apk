@@ -1,7 +1,7 @@
 import { useTaskStore } from "../store/task.store"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import type { RefObject } from "react"
-import {  List } from "lucide-react"
+import { MenuDefaultIcon, MenuSuccessIcon } from "../components"
 // import { VolumeSlider } from "./VolumeSlider"
 import { TaskButton } from "./TaskButton"
 import Calendar from "./Calendar"
@@ -33,6 +33,8 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [isTaskListViewOpen, setIsTaskListViewOpen] = useState(false)
+  const anchorRefButtonListTask = useRef<HTMLButtonElement | null>(null)
+  const taskListViewRef = useRef<HTMLDivElement | null>(null)
 
   // Get today's tasks - usar dados com sessões quando disponível, excluindo concluídas
   const todayTasks = useMemo(() => {
@@ -102,6 +104,27 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
     setIsCalendarOpen(!isCalendarOpen)
     setSelectedDate(null)
   }
+
+  // Fechar o TaskListView quando clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        isTaskListViewOpen &&
+        anchorRefButtonListTask.current &&
+        !anchorRefButtonListTask.current.contains(event.target as Node) &&
+        taskListViewRef.current &&
+        !taskListViewRef.current.contains(event.target as Node)
+      ) {
+        setIsTaskListViewOpen(false)
+        invoke("reset_window_size")
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+    }
+  }, [isTaskListViewOpen])
 
   // Fechar o calendário quando clicar fora
   useEffect(() => {
@@ -173,31 +196,48 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
 
         {/* System Section with Add Button */}
         <div className="flex items-center gap-4 flex-shrink-0">
-          {/* Task List View Button */}
-          <button
-            onClick={async () => {
-              await invoke("expand_window_for_modal")
-              setIsTaskListViewOpen(true)
-            }}
-            className="flex items-center cursor-pointer border border-white rounded-full gap-2 text-sm font-medium text-zinc-300 hover:text-zinc-100 hover:bg-white/10 transition-colors p-2"
-            title="Ver todas as tarefas"
-          >
-            <List className="w-4 h-4" />
-          </button>
-
-          {/* Add Button */}
+               {/* Add Button */}
           <button
             ref={buttonRef}
             onClick={onAddClick}
-            className="flex items-center cursor-pointer  rounded-full gap-2 text-sm font-medium text-zinc-300 hover:text-zinc-100 hover:bg-white/10 transition-colors p-2"
+            className="flex items-center cursor-pointer bg-[#444444] rounded-full gap-2 text-sm font-medium text-zinc-300 hover:text-zinc-100 hover:bg-white/10 transition-colors w-8 h-8 justify-center"
             title="Adicionar nova tarefa"
           >
             {isModalOpen ? (
-              <PlusSuccessIcon className="w-6 h-6 text-[#17FF8B]" />
+              <PlusSuccessIcon className="w-4 h-4 text-[#17FF8B]" />
             ) : (
-              <CirclePlusIcon className="w-6 h-6" />
+              <CirclePlusIcon className="w-4 h-4" />
             )}
           </button>
+
+
+          {/* Task List View Button */}
+
+          <button
+            ref={anchorRefButtonListTask}
+            onClick={async () => {
+              await invoke("expand_window_for_modal")
+              setIsTaskListViewOpen(!isTaskListViewOpen)
+            }}
+            className="flex items-center cursor-pointer bg-[#444444] p-2 w-8 h-8  justify-center rounded-full gap-2 text-sm font-medium text-zinc-300 hover:text-zinc-100 hover:bg-white/10 transition-colors  relative"
+            title="Ver todas as tarefas"
+          >
+            <div className="w-4 h-4 flex items-center justify-center">
+              <div className={`absolute inset-0 flex items-center justify-center transition-all duration-300 ease-in-out ${
+                isTaskListViewOpen ? 'opacity-0 scale-90 rotate-12' : 'opacity-100 scale-100 rotate-0'
+              }`}>
+                <MenuDefaultIcon className="w-4 h-4 text-zinc-300" />
+              </div>
+
+              <div className={`absolute inset-0 flex items-center justify-center transition-all duration-300 ease-in-out ${
+                isTaskListViewOpen ? 'opacity-100 scale-100 rotate-0' : 'opacity-0 scale-90 -rotate-12'
+              }`}>
+                <MenuSuccessIcon className="w-4 h-4 text-[#17FF8B]" />
+              </div>
+            </div>
+          </button>
+
+
 
           {/* Volume Control with Slider */}
           {/* <VolumeSlider /> */}
@@ -209,7 +249,7 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
                 className="flex items-center gap-1 cursor-pointer calendar-trigger"
                 onClick={toggleCalendar}
               >
-                <div className="relative w-6 h-6">
+                <div className="relative w-6 h-6  select-none">
                   <div className={`absolute inset-0 transition-all duration-500 ${isCalendarOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-90'}`}>
                     <CalendarStartIcon className="w-6 h-6 text-[#17FF8B]" />
                   </div>
@@ -217,7 +257,7 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
                     <CalendarIcon className="w-6 h-6 text-white" />
                   </div>
                 </div>
-                <span>
+                <span className=" select-none">
                   {currentTime.toLocaleDateString("pt-BR", {
                     day: "2-digit",
                     month: "2-digit",
@@ -228,7 +268,7 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
 
               {isCalendarOpen && (
                 <div
-                  className="absolute right-[calc(100%-80px)] top-[calc(100%+8px)] z-50 calendar-container"
+                  className="absolute select-none right-[calc(100%-80px)] top-[calc(100%+8px)] z-50 calendar-container"
                   onClick={e => e.stopPropagation()}
                 >
                   {selectedDate ? (
@@ -260,8 +300,8 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
               )}
             </div>
             <span className="border-x border-[#7F7F7F] h-6 "></span>
-            <div className="flex items-center gap-1">
-              <span className="font-medium text-xs">
+            <div className="flex items-center gap-1 selected-none">
+              <span className="font-medium select-none text-xs">
                 {currentTime.toLocaleDateString("pt-BR", { weekday: "short" }).toUpperCase()} {currentTime.toLocaleTimeString("pt-BR", {
                   hour: "2-digit",
                   minute: "2-digit"
@@ -274,6 +314,8 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
 
       {/* Task List View Modal */}
       <TaskListView
+        ref={taskListViewRef}
+        anchorRef={anchorRefButtonListTask}
         isOpen={isTaskListViewOpen}
         onClose={async () => {
           setIsTaskListViewOpen(false)

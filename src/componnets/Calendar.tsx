@@ -35,7 +35,7 @@ const Calendar: React.FC<CalendarProps> = ({
   }, [onUnmount])
 
   return (
-    <div className="custom-calendar">
+    <div className="custom-calendar  select-none">
       <DayPicker
         mode="single"
         selected={selected}
