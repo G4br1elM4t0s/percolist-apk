@@ -1,3 +1,8 @@
+#![cfg_attr(
+    all(not(debug_assertions), target_os = "windows"),
+    windows_subsystem = "windows"
+)]
+
 use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -1612,6 +1617,32 @@ async fn get_task_by_id(task_id: i64, db_state: State<'_, DatabaseState>) -> Res
     Ok(task)
 }
 
+#[tauri::command]
+async fn adjust_window_size(window: tauri::WebviewWindow, width: f64, height: f64) -> Result<(), String> {
+    let current_position = window.outer_position().map_err(|e| e.to_string())?;
+    let monitor = window.current_monitor().map_err(|e| e.to_string())?.unwrap();
+    let monitor_size = monitor.size();
+
+    // Garantir que as dimensões não excedam o monitor e respeitem os limites mínimos/máximos
+    let new_width = width.min(1920.0).max(800.0);
+    let new_height = height.min(monitor_size.height as f64).max(70.0);
+
+    window
+        .set_size(tauri::PhysicalSize::new(new_width, new_height))
+        .map_err(|e| e.to_string())?;
+
+    // Manter a posição Y e centralizar horizontalmente
+    let x = (monitor_size.width as f64 - new_width) / 2.0;
+    window
+        .set_position(tauri::PhysicalPosition::new(
+            x as i32,
+            current_position.y
+        ))
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 fn main() {
     println!("Iniciando aplicação ClockWise...");
 
@@ -1648,9 +1679,9 @@ fn main() {
         false
     };
 
-    let db = init_database().expect("Failed to initialize database");
+    let db_connection = init_database().expect("Database initialization failed");
     let db_state = DatabaseState {
-        connection: Arc::new(Mutex::new(db)),
+        connection: Arc::new(Mutex::new(db_connection)),
     };
 
     tauri::Builder::default()
@@ -1681,6 +1712,7 @@ fn main() {
             toggle_system_mute,
             expand_window_for_modal,
             reset_window_size,
+            adjust_window_size,
         ])
         .setup(move |app| {
             let handle = app.handle();

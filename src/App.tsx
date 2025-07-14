@@ -3,12 +3,16 @@ import { useTaskStore } from "./store/task.store"
 import { TaskFooter } from "./componnets/TaskFooter"
 import { TaskModal } from "./componnets/TaskModal"
 import { usePomodoroChecker } from "./hooks/usePomodoroChecker"
+import { useAutoResize } from "./hooks/useAutoResize"
 import { invoke } from "@tauri-apps/api/core"
 
 function App() {
   const { loadTasks, loadTasksWithSessions } = useTaskStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
+
+  // Ref para ajuste automático de altura
+  const contentRef = useAutoResize([isModalOpen])
 
   // Verificador automático de sessões Pomodoro
   usePomodoroChecker(5000) // Verifica a cada 5 segundos
@@ -48,7 +52,7 @@ function App() {
   }, [isModalOpen])
 
   return (
-    <div className="fixed top-0 left-0 right-0 ">
+    <div ref={contentRef} className="fixed top-0 left-0 right-0">
       <TaskFooter onAddClick={handleOpenModal} buttonRef={buttonRef} isModalOpen={isModalOpen} />
       <TaskModal isOpen={isModalOpen} onClose={handleCloseModal} anchorEl={buttonRef} />
     </div>

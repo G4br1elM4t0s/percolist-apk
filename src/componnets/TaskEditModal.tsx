@@ -225,17 +225,6 @@ export function TaskEditModal({ isOpen, onClose, anchorEl, task, listViewAnchorR
     }
 
     if (!taskName.trim() || !task) return
-    const estimated_hours = isTimeEditable ? (() => {
-  const [hours, minutes, seconds] = timeInput.split(":").map(Number)
-  const totalSeconds = hours * 3600 + minutes * 60 + seconds
-  const totalHours = totalSeconds / 3600
-
-  if (totalHours > 99) {
-    return alert("Tempo estimado não pode exceder 99 horas")
-  }
-
-  return totalHours
-})() : task.estimated_hours
 
 
 

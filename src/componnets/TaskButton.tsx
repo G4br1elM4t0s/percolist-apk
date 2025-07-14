@@ -13,7 +13,6 @@ interface TaskButtonProps {
   onDragAction?: (taskId: string, action: "start" | "pause") => void
   isListView?: boolean
   listViewAnchorRef?: React.RefObject<HTMLDivElement>
-
 }
 
 export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }: TaskButtonProps) {
@@ -197,11 +196,11 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
     setDragStartX(e.clientX)
     setCurrentDragX(e.clientX)
     // NÃO resetar lastActionExecuted aqui
-    
+
     const handleMouseMove = (moveEvent: MouseEvent) => {
       setCurrentDragX(moveEvent.clientX)
       const currentDelta = moveEvent.clientX - dragStartX
-    
+
       // Apenas feedback visual durante o movimento
       if (Math.abs(currentDelta) > 30) {
         if (currentDelta > 0) {
@@ -233,12 +232,12 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
         setShouldSwapElements(false)
       }
     }
-  
+
     const handleMouseUp = (upEvent: MouseEvent) => {
       setIsDragging(false)
-      
+
       const deltaX = upEvent.clientX - dragStartX
-  
+
       // Executar ação de START quando soltar (movimento para esquerda)
       if (Math.abs(deltaX) > 30 && deltaX < 0) {
         // ESQUERDA = START (executar quando soltar)
@@ -267,12 +266,12 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
           setLastActionExecuted("start")
         }
       }
-  
+
       // Reset visual elements se não houve movimento suficiente
       if (Math.abs(deltaX) < 30) {
         setShouldSwapElements(false)
       }
-  
+
       // Cleanup
       setCurrentDragX(0)
       // Reset lastActionExecuted após um delay para permitir nova ação
@@ -280,7 +279,7 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
       window.removeEventListener("mousemove", handleMouseMove)
       window.removeEventListener("mouseup", handleMouseUp)
     }
-  
+
     window.addEventListener("mousemove", handleMouseMove)
     window.addEventListener("mouseup", handleMouseUp)
   }
@@ -294,13 +293,13 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
     setDragStartX(touch.clientX)
     setCurrentDragX(touch.clientX)
     // NÃO resetar lastActionExecuted aqui
-  
+
     const handleTouchMove = (moveEvent: TouchEvent) => {
       const touch = moveEvent.touches[0]
       if (touch) {
         setCurrentDragX(touch.clientX)
         const currentDelta = touch.clientX - dragStartX
-  
+
         // Apenas feedback visual durante o movimento
         if (Math.abs(currentDelta) > 30) {
           if (currentDelta > 0) {
@@ -332,14 +331,14 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
         }
       }
     }
-  
+
     const handleTouchEnd = (endEvent: TouchEvent) => {
       setIsDragging(false)
-  
+
       const touch = endEvent.changedTouches[0]
       if (touch) {
         const deltaX = touch.clientX - dragStartX
-  
+
         // Executar ação de START quando soltar (movimento para esquerda)
         if (Math.abs(deltaX) > 30 && deltaX < 0) {
           // ESQUERDA = START (executar quando soltar)
@@ -368,13 +367,13 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
             setLastActionExecuted("start")
           }
         }
-  
+
         // Reset visual elements se não houve movimento suficiente
         if (Math.abs(deltaX) < 30) {
           setShouldSwapElements(false)
         }
       }
-  
+
       // Cleanup
       setCurrentDragX(0)
       // Reset lastActionExecuted após um delay para permitir nova ação
@@ -382,7 +381,7 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
       window.removeEventListener("touchmove", handleTouchMove)
       window.removeEventListener("touchend", handleTouchEnd)
     }
-  
+
     window.addEventListener("touchmove", handleTouchMove, { passive: false })
     window.addEventListener("touchend", handleTouchEnd)
   }

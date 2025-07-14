@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "ClockWise_Panel",
-  "version": "0.1.0",
-  "identifier": "com.clockwise.panel",
+  "productName": "Percolist_Panel",
+  "version": "1.0.0",
+  "identifier": "com.percolist.panel",
   "build": {
     "beforeBuildCommand": "npm run build",
     "beforeDevCommand": "npm run dev",
@@ -31,9 +31,17 @@
   "bundle": {
     "active": true,
     "targets": [
-      "deb",
-      "appimage"
+     "nsis"
     ],
+    "windows": {
+      "wix": {
+        "language": "pt-BR",
+        "template": "main.wxs"
+      },
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
