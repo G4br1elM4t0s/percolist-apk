@@ -1,6 +1,6 @@
 #!/bin/bash
 
-WINDOW_TITLE="ClockWise_Panel_Window" # Exatamente como no tauri.conf.json
+WINDOW_TITLE="Percolist_Panel_Window" # Exatamente como no tauri.conf.json
 TARGET_WIDTH=1920
 TARGET_HEIGHT=32
 TARGET_X=0

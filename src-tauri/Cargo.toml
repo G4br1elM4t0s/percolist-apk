@@ -26,6 +26,7 @@ tauri-plugin-log = "2.0.0-rc"
 global-hotkey = "0.6"
 rusqlite = { version = "0.32", features = ["bundled", "chrono"] }
 chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1.0", features = ["full"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = { version = "0.18.0", features = ["v3_24"] }

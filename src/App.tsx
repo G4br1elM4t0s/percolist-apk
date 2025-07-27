@@ -4,6 +4,7 @@ import { TaskFooter } from "./componnets/TaskFooter"
 import { TaskModal } from "./componnets/TaskModal"
 import { usePomodoroChecker } from "./hooks/usePomodoroChecker"
 import { useAutoResize } from "./hooks/useAutoResize"
+import { useAuthListener } from "./hooks/useAuthListener"
 import { invoke } from "@tauri-apps/api/core"
 
 function App() {
@@ -16,6 +17,9 @@ function App() {
 
   // Verificador automático de sessões Pomodoro
   usePomodoroChecker(5000) // Verifica a cada 5 segundos
+
+  // Listener para eventos de autenticação
+  useAuthListener()
 
   useEffect(() => {
     const init = async () => {

@@ -1,15 +1,15 @@
 #!/bin/bash
 
-# Script to reset ClockWise panel configuration and fix any issues
+# Script to reset Percolist panel configuration and fix any issues
 
-echo "Resetting ClockWise panel configuration..."
+echo "Resetting Percolist panel configuration..."
 
-# Kill any remaining ClockWise processes
-pkill -f "ClockWise"
+# Kill any remaining Percolist processes
+pkill -f "Percolist"
 pkill -f "target/debug/app"
 
-# Find any ClockWise windows and reset their properties
-WINDOW_IDS=$(xdotool search --name "ClockWise" 2>/dev/null || true)
+# Find any Percolist windows and reset their properties
+WINDOW_IDS=$(xdotool search --name "Percolist" 2>/dev/null || true)
 
 for WINDOW_ID in $WINDOW_IDS; do
     if [ ! -z "$WINDOW_ID" ]; then

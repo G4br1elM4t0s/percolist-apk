@@ -7,7 +7,7 @@ echo "Janelas disponíveis:"
 wmctrl -l -G
 
 echo ""
-echo "Procurando janelas do ClockWise/Tauri..."
+echo "Procurando janelas do Percolist/Tauri..."
 
 # Encontra e redimensiona TODAS as janelas suspeitas
 wmctrl -l -G | while read line; do
@@ -15,7 +15,7 @@ wmctrl -l -G | while read line; do
     WINDOW_NAME=$(echo "$line" | awk '{for(i=5;i<=NF;i++) printf "%s ", $i; print ""}')
 
     # Se a janela tem qualquer coisa relacionada ao nosso app
-    if [[ $WINDOW_NAME == *"ClockWise"* ]] || [[ $WINDOW_NAME == *"clockwise"* ]] || [[ $WINDOW_NAME == *"tauri"* ]] || [[ $WINDOW_NAME == *"app"* ]]; then
+    if [[ $WINDOW_NAME == *"Percolist"* ]] || [[ $WINDOW_NAME == *"percolist"* ]] || [[ $WINDOW_NAME == *"tauri"* ]] || [[ $WINDOW_NAME == *"app"* ]]; then
         echo "REDIMENSIONANDO: $WINDOW_ID - $WINDOW_NAME"
 
         # Força redimensionamento BRUTAL
