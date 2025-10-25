@@ -24,7 +24,10 @@ export default defineConfig({
 
   // Tauri expects a fixed port, fail if that port is not available
   server: {
-    strictPort: true
+    strictPort: true,
+    watch: {
+      ignored: ['**/db.sqlite', '**/app-data/**']
+    }
   },
 
   // To make use of `TAURI_PLATFORM`, `TAURI_ARCH`, etc.

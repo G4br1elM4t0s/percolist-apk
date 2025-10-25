@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Percolist_Panel",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "identifier": "com.percolist.panel",
   "build": {
     "beforeBuildCommand": "npm run build",
@@ -14,7 +14,7 @@
       {
         "label": "main",
         "width": 1920,
-        "height": 70,
+        "height": 85,
         "resizable": false,
         "decorations": false,
         "alwaysOnTop": true,
@@ -49,5 +49,15 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://api.percolist.com.br/updates/win32/x64/latest.json"
+      ],
+      "dialog": true,
+      "pubkey":"dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZEN0NEMEZBMTUxODE0OTkKUldTWkZCZ1YrdEI4YmVZMythNTFQVnF2NHEvZHNZVGo4QTRQa1hRdDdXZlVoQ0RFb084YTQrTDQK"
+    }
   }
 }

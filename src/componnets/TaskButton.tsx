@@ -1,11 +1,12 @@
 import { invoke } from "@tauri-apps/api/core"
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useCallback } from "react"
 import type { Task, TaskWithActiveSession } from "../store/task.store"
 import { formatTimeDisplay } from "../utils/format"
 import { calculateTimeRemaining, secondsToDuration } from "../utils/time"
 import { SettingsIcon } from "../components/SettingsIcon"
 import { useTaskStore } from "../store/task.store"
 import { TaskEditModal } from "./TaskEditModal"
+import { useQueryClient } from "@tanstack/react-query";
 
 interface TaskButtonProps {
   task: Task | TaskWithActiveSession
@@ -35,28 +36,48 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
   )
   const [wasActivated] = useState(false)
   const [isPaused, setIsPaused] = useState(task.status === "paused")
-  const [currentTimeRemaining, setCurrentTimeRemaining] = useState(() => {
-    const initialTime = calculateTimeRemaining(task)
-    // Se a tarefa está em andamento e o tempo é 00:00:00, começar negativo
-    if (
-      (task.status === "in_progress" || task.status === "waiting") &&
-      initialTime.hours === 0 &&
-      initialTime.minutes === 0 &&
-      initialTime.seconds === 0
-    ) {
-      return { ...initialTime, isNegative: true }
-    }
-    return initialTime
-  })
+  const [currentTimeRemaining, setCurrentTimeRemaining] = useState(() => ({ hours: 0, minutes: 0, seconds: 0, isNegative: false }))
 
-  // Estados para drag customizado
+  // Configuração da sincronização periódica
+  const SYNC_INTERVAL_SECONDS = 10 // Sincroniza a cada 10 segundos
+
+  // Timer sem drift: saldo base + timestamp da última sync
+  const baseRemainingRef = useRef<number>(0)
+  const lastSyncAtRef = useRef<number>(Date.now())
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const isUpdatingBackendRef = useRef<boolean>(false) // Controle de atualização do backend
+
+  // Estados para drag customizado melhorado
   const [isDragging, setIsDragging] = useState(false)
   const [dragStartX, setDragStartX] = useState(0)
   const [currentDragX, setCurrentDragX] = useState(0)
   const [shouldSwapElements, setShouldSwapElements] = useState(false)
   const [lastActionExecuted, setLastActionExecuted] = useState<"start" | "pause" | null>(null)
+  const [dragProgress, setDragProgress] = useState(0) // Progresso do drag (0-100)
+  const [dragDirection, setDragDirection] = useState<"left" | "right" | null>(null)
   const dragRef = useRef<HTMLDivElement>(null)
 
+  // Configurações do drag and drop
+  const DRAG_CONFIG = {
+    THRESHOLD: 25, // Distância mínima para ativar (px)
+    SENSITIVITY: 1.2, // Sensibilidade do movimento
+    ANIMATION_DURATION: 200, // Duração das animações (ms)
+    HAPTIC_FEEDBACK: true, // Feedback tátil para dispositivos touch
+    VISUAL_FEEDBACK: true, // Feedback visual aprimorado
+    MAX_DRAG_DISTANCE: 100, // Distância máxima para cálculo de progresso
+    ELASTIC_BOUNCE: true, // Efeito elástico ao atingir limites
+    SNAP_BACK: true // Retorna suavemente à posição original
+  }
+
+  // Configurações para proteção contra drift de timer
+  const DRIFT_PROTECTION = {
+    INACTIVITY_THRESHOLD: 10, // Segundos de inatividade para forçar sync
+    DRIFT_THRESHOLD: 2, // Segundos de drift para corrigir automaticamente
+    NORMAL_SYNC_THRESHOLD: 5, // Segundos para sync normal
+    SYNC_INTERVAL_SECONDS: 10, // Intervalo para sincronização periódica
+    SYNC_DEBUG: true // Logs de debug para sincronização
+  }
+  const queryClient = useQueryClient()
   // Estados e refs para o modal de edição
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const settingsButtonRef = useRef<HTMLButtonElement>(null)
@@ -65,34 +86,169 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
 
   const timeRemaining = currentTimeRemaining
 
+  // Função para haptic feedback em dispositivos touch
+  const triggerHapticFeedback = useCallback((intensity: "light" | "medium" | "heavy" = "medium") => {
+    if (!DRAG_CONFIG.HAPTIC_FEEDBACK) return
+
+    try {
+      if (navigator.vibrate) {
+        const patterns = {
+          light: [10],
+          medium: [20],
+          heavy: [30]
+        }
+        navigator.vibrate(patterns[intensity])
+      }
+    } catch (error) {
+      // Fallback silencioso se não suportar
+    }
+  }, [])
+
+  // Função para atualizar o backend periodicamente sem interferir no contador
+  const updateBackendPeriodically = useCallback(async (taskId: string, currentRemainingSeconds: number) => {
+    // Proteção contra múltiplas chamadas simultâneas
+    if (isUpdatingBackendRef.current) {
+      if (DRIFT_PROTECTION.SYNC_DEBUG) {
+        console.log(`⏳ Sync já em andamento, ignorando...`)
+      }
+      return
+    }
+
+    isUpdatingBackendRef.current = true
+
+    try {
+      // Atualiza o backend com o tempo atual
+      await invoke("update_task_remaining_time", {
+        taskId: taskId,
+        remainingSeconds: currentRemainingSeconds
+      })
+
+      // Log para debug (opcional)
+      if (DRIFT_PROTECTION.SYNC_DEBUG) {
+        console.log(`🔄 Backend atualizado: ${currentRemainingSeconds}s para tarefa ${taskId}`)
+      }
+
+      // Atualiza o timestamp de sync para manter precisão
+      lastSyncAtRef.current = Date.now()
+      baseRemainingRef.current = currentRemainingSeconds
+
+      // Log de debug adicional
+      if (DRIFT_PROTECTION.SYNC_DEBUG) {
+        const now = Date.now()
+        const elapsedSinceSync = Math.floor((now - lastSyncAtRef.current) / 1000)
+        console.log(`⏱️ Sync realizado: ${elapsedSinceSync}s desde último sync, tempo restante: ${currentRemainingSeconds}s`)
+      }
+
+    } catch (error) {
+      console.error("❌ Erro ao atualizar backend periodicamente:", error)
+    } finally {
+      isUpdatingBackendRef.current = false
+    }
+  }, [])
+
+  // 🔧 SINCRONIZAÇÃO CRÍTICA: Atualiza o backend com o tempo atual antes de pausar
+  const syncTimeBeforePause = useCallback(async (taskId: string) => {
+    try {
+      const currentElapsed = Math.floor((Date.now() - lastSyncAtRef.current) / 1000)
+      const currentRemaining = baseRemainingRef.current - currentElapsed
+
+      console.log(`⏸️ Sincronizando tempo antes de pausar: ${currentRemaining}s (${currentRemaining < 0 ? 'negativo' : 'positivo'})`)
+
+      // Atualiza o backend com o tempo atual ANTES de pausar
+      await invoke("update_task_remaining_time", {
+        taskId,
+        remainingSeconds: currentRemaining
+      })
+
+      console.log(`✅ Tempo sincronizado com sucesso: ${currentRemaining}s`)
+      return currentRemaining
+    } catch (error) {
+      console.error("❌ Erro ao sincronizar tempo antes de pausar:", error)
+      // Retorna o tempo calculado mesmo se falhar o sync
+      const currentElapsed = Math.floor((Date.now() - lastSyncAtRef.current) / 1000)
+      const currentRemaining = baseRemainingRef.current - currentElapsed
+      console.log(`🔄 Retornando tempo calculado localmente: ${currentRemaining}s`)
+      return currentRemaining
+    }
+  }, [])
+
   const truncateText = (text: string, limit: number) => {
     if (text.length <= limit) return text
     return `${text.substring(0, limit)}...`
   }
 
-  // Buscar tempo real da tarefa quando componente for montado ou task mudar
-  useEffect(() => {
-    if (task.id) {
-      const updateRealTime = async () => {
-        try {
-          const remainingSeconds = await getTaskRemainingTime(task.id!)
-          const duration = secondsToDuration(remainingSeconds)
-          setCurrentTimeRemaining(duration)
-        } catch (error) {
-          // Erro silencioso
-        }
-      }
-      updateRealTime()
-    }
-  }, [task.id, task.status])
+  // Sincroniza com backend e atualiza saldo base/timestamp + estado
+  const syncFromBackend = useCallback(async (taskId: string, forceSync = false) => {
+    try {
+      const remainingSeconds = await getTaskRemainingTime(taskId)
 
-  // Sincronizar estados locais com mudanças do backend
+      // PROTEÇÃO CRÍTICA: Se a tarefa está pausada, NÃO faz sync para evitar reset de tempo
+      // Mas permite sync forçado para operações críticas como pausar
+      if (task.status === "paused" && !forceSync) {
+        console.log(`🚫 Sync bloqueado: tarefa pausada, mantendo tempo atual`)
+        return
+      }
+
+      // Permite sync de tempos negativos para permitir pausar e salvar
+      // Removido o return early para remainingSeconds < 0
+
+      // Proteção contra re-sync desnecessário durante timer ativo
+      if (!forceSync && intervalRef.current) {
+        // Se o timer está rodando, só faz sync se a diferença for significativa (>5s)
+        const currentElapsed = Math.floor((Date.now() - lastSyncAtRef.current) / 1000)
+        const currentCalculated = baseRemainingRef.current - currentElapsed
+        const difference = Math.abs(remainingSeconds - currentCalculated)
+
+        if (difference < 5) {
+          // Diferença pequena, não precisa re-sync
+          console.log(`🔄 Sync ignorado: diferença pequena (${difference}s)`)
+          return
+        }
+        console.log(`🔄 Sync necessário: diferença significativa (${difference}s)`)
+      }
+
+      baseRemainingRef.current = Number.isFinite(remainingSeconds) ? remainingSeconds : 0
+      lastSyncAtRef.current = Date.now()
+
+      const isNegative = remainingSeconds < 0
+      const dur = secondsToDuration(Math.abs(remainingSeconds))
+      setCurrentTimeRemaining({ ...dur, isNegative })
+    } catch (_) {
+      // silencioso
+    }
+  }, [getTaskRemainingTime, task.status])
+
+  // Atualiza display quando pendente/completa; NÃO chama sync aqui para evitar resets
+  useEffect(() => {
+    if (!task.id) return
+    if (task.status === "pending" || task.status === "completed") {
+      const calculatedTime = calculateTimeRemaining(task)
+      setCurrentTimeRemaining(calculatedTime)
+      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
+    }
+  }, [task.id, task.status, task.estimated_hours])
+
+  // Sync inicial ao trocar de tarefa (só se não estiver pausada)
+  useEffect(() => {
+    if (task.id && task.status !== "paused") {
+      // Permite sync mesmo para tempos negativos
+      syncFromBackend(task.id)
+    }
+  }, [task.id, task.status, syncFromBackend])
+
+  // Sincroniza estados locais com mudanças do backend
   useEffect(() => {
     const shouldSwap = task.status === "in_progress" || task.status === "waiting"
     const shouldPause = task.status === "paused"
 
     setIsSwapped(shouldSwap)
     setIsPaused(shouldPause)
+
+    // Quando pausa automaticamente, resetar o drag visual para direita
+    if (shouldPause) {
+      setShouldSwapElements(false)
+      setLastActionExecuted(null) // Reset da ação de drag também
+    }
   }, [task.status])
 
   useEffect(() => {
@@ -103,6 +259,8 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
             taskId: task.id,
             stopAndStart: true
           })
+          console.log("deveria invalidar query")
+          queryClient.invalidateQueries({ queryKey: ["active-task"] })
         } catch (error) {
           // Erro silencioso
         }
@@ -112,55 +270,93 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
     }
   }, [isSwapped, wasActivated, task.id, task.name])
 
-  // Timer inteligente - Pomodoro ou tempo total
+  // Timer sem drift: apenas calcula contra timestamp + saldo base
   useEffect(() => {
-    let timer: NodeJS.Timeout | null = null
+    const isActive = ((task.status === "in_progress" || task.status === "waiting" || !!activeSession) && task.status !== "paused" && !!task.id)
 
-    // Só roda timer se tarefa está ativa e não pausada
-    const shouldRunTimer = (task.status === "in_progress" || task.status === "waiting") && !isPaused
+    // limpar intervalo anterior sempre
+    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
+    if (!isActive) return
 
-    if (shouldRunTimer) {
-      // SEMPRE usar o tempo real da tarefa, não do Pomodoro
-      // O Pomodoro controla os ciclos, mas o timer deve mostrar o tempo restante da tarefa
-      // Permitir timer rodar mesmo quando negativo
-      const shouldStartTimer = true // Timer sempre roda quando tarefa está ativa
+    let canceled = false
+    let lastSyncTime = 0 // Proteção contra múltiplas syncs
+    let syncCounter = 0 // Contador para sincronização periódica
 
-      if (shouldStartTimer) {
-        timer = setInterval(() => {
-          setCurrentTimeRemaining(prev => {
-            // Calcular total de segundos atuais (considerando se é negativo)
-            let totalSeconds = prev.hours * 3600 + prev.minutes * 60 + prev.seconds
-
-            if (prev.isNegative) {
-              totalSeconds = -totalSeconds
-            }
-
-            // Decrementar 1 segundo
-            totalSeconds -= 1
-
-            // Determinar se é negativo
-            const isNegative = totalSeconds < 0
-            const absSeconds = Math.abs(totalSeconds)
-
-            // Converter de volta para horas, minutos, segundos
-            const hours = Math.floor(absSeconds / 3600)
-            const minutes = Math.floor((absSeconds % 3600) / 60)
-            const seconds = Math.floor(absSeconds % 60)
-
-            // Timer funcionando corretamente
-
-            return { hours, minutes, seconds, isNegative }
-          })
-        }, 1000)
+    ;(async () => {
+      // Sync inicial ao iniciar o timer (FORÇADO para garantir precisão)
+      const now = Date.now()
+      if (now - lastSyncTime > 1000) { // Evita múltiplas syncs em 1s
+        lastSyncTime = now
+        await syncFromBackend(task.id!, true)
       }
-    }
+      if (canceled) return
+
+      intervalRef.current = setInterval(() => {
+        // PROTEÇÃO CRÍTICA: Se a tarefa foi pausada durante a execução, para o timer
+        if (task.status === "paused") {
+          console.log(`⏸️ Timer pausado durante execução, parando...`)
+          clearInterval(intervalRef.current!)
+          intervalRef.current = null
+          return
+        }
+
+        const elapsed = Math.floor((Date.now() - lastSyncAtRef.current) / 1000)
+        const rawRemaining = baseRemainingRef.current - elapsed
+        const remaining = rawRemaining // pode ser negativo, exibimos sinal
+
+        // Proteção contra drift: se o tempo calculado for muito diferente do esperado
+        const expectedElapsed = Math.floor((Date.now() - lastSyncAtRef.current) / 1000)
+        const timeDrift = Math.abs(expectedElapsed - elapsed)
+
+        if (timeDrift > DRIFT_PROTECTION.DRIFT_THRESHOLD) { // Se houve drift significativo
+          console.log(`⚠️ Drift detectado: ${timeDrift}s, corrigindo...`)
+          // Corrige o drift forçando uma sincronização
+          syncFromBackend(task.id!, true)
+        }
+
+        const dur = secondsToDuration(Math.abs(remaining))
+        setCurrentTimeRemaining({ ...dur, isNegative: remaining < 0 })
+
+        // Sincronização periódica com o backend
+        syncCounter++
+        if (syncCounter >= DRIFT_PROTECTION.SYNC_INTERVAL_SECONDS) {
+          syncCounter = 0
+          // Atualiza o backend com o tempo atual sem interferir no contador
+          updateBackendPeriodically(task.id!, remaining)
+        }
+
+        // Continua decrementando mesmo após zero (tempo negativo)
+        // Só para quando a tarefa muda de status ou é pausada
+      }, 1000)
+    })()
 
     return () => {
-      if (timer) {
-        clearInterval(timer)
+      canceled = true
+      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
+    }
+  }, [task.status, task.id, syncFromBackend, activeSession, updateBackendPeriodically])
+
+  // Re-sync ao voltar visível (uma única vez, não a cada tick)
+  useEffect(() => {
+    const onVis = () => {
+      // PROTEÇÃO CRÍTICA: Não faz sync se a tarefa está pausada
+      if (document.visibilityState === "visible" && task.id && task.status !== "paused") {
+        // Detecta se houve inatividade prolongada (mais de 10 segundos)
+        const currentElapsed = Math.floor((Date.now() - lastSyncAtRef.current) / 1000)
+
+        if (currentElapsed > DRIFT_PROTECTION.INACTIVITY_THRESHOLD) {
+          // Inatividade prolongada detectada - FORÇA sync para corrigir drift
+          console.log(`🔄 Inatividade detectada: ${currentElapsed}s, forçando sync...`)
+          syncFromBackend(task.id, true) // forceSync = true
+        } else if (currentElapsed > DRIFT_PROTECTION.NORMAL_SYNC_THRESHOLD) {
+          // Re-sync normal se passou mais de 5s
+          syncFromBackend(task.id)
+        }
       }
     }
-  }, [task.status, isPaused, task.id])
+    document.addEventListener("visibilitychange", onVis)
+    return () => document.removeEventListener("visibilitychange", onVis)
+  }, [task.id, task.status, syncFromBackend])
 
   // Atualizar tempo quando tarefa muda ou quando não está ativa
   useEffect(() => {
@@ -170,51 +366,134 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
     }
   }, [task.status, task.estimated_hours, task])
 
-  // Atualizar tempo sempre que a tarefa for pausada ou retomada
+  // Atualizar tempo em retomada (não faz fetch ao pausar para não "resetar")
   useEffect(() => {
-    if (task.id && task.status !== "pending" && task.status !== "completed") {
-      const updateTimeOnStatusChange = async () => {
+    const isResumed = task.status === "in_progress" || task.status === "waiting"
+    // PROTEÇÃO CRÍTICA: Só executa se realmente houve resume (não estava pausada antes)
+    if (task.id && isResumed && task.status !== "paused") {
+      const updateTimeOnResume = async () => {
         try {
           const remainingSeconds = await getTaskRemainingTime(task.id!)
+
+          // Permite resume mesmo para tempos negativos
+          // Removido o return early para remainingSeconds <= 0
+
           const duration = secondsToDuration(remainingSeconds)
           setCurrentTimeRemaining(duration)
+          // ressincroniza base p/ o timer continuar consistente pós-resume
+          baseRemainingRef.current = Number.isFinite(remainingSeconds) ? remainingSeconds : 0
+          lastSyncAtRef.current = Date.now()
+
+          // Força re-sync para garantir precisão após resume
+          setTimeout(() => syncFromBackend(task.id!, true), 50)
         } catch (error) {
           // Erro silencioso
         }
       }
-
-      // Adicionar um pequeno delay para garantir que o backend processou a mudança
-      setTimeout(updateTimeOnStatusChange, 100)
+      setTimeout(updateTimeOnResume, 100)
     }
-  }, [task.status, task.id])
+  }, [task.status, task.id, getTaskRemainingTime, syncFromBackend])
 
-  // Handlers para drag customizado com mouse
+  // Monitor de mudanças de estado para re-sync inteligente
+  useEffect(() => {
+    // PROTEÇÃO CRÍTICA: Não executa se a tarefa está pausada
+    if (!task.id || !intervalRef.current || task.status === "paused") return
+
+    // Se o timer está rodando e houve mudança significativa de estado
+    const shouldReSync = () => {
+      const currentElapsed = Math.floor((Date.now() - lastSyncAtRef.current) / 1000)
+      const currentCalculated = baseRemainingRef.current - currentElapsed
+
+      // Re-sync se passou muito tempo desde a última sync (>30s)
+      if (currentElapsed > 30) {
+        return true
+      }
+
+      return false
+    }
+
+    if (shouldReSync()) {
+      // Re-sync inteligente sem forçar
+      syncFromBackend(task.id)
+    }
+  }, [task.status, task.id, syncFromBackend])
+
+  // Handlers para drag customizado com mouse melhorado
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
+
+    // Reset estados de drag
     setIsDragging(true)
     setDragStartX(e.clientX)
     setCurrentDragX(e.clientX)
+    setDragProgress(0)
+    setDragDirection(null)
+
     // NÃO resetar lastActionExecuted aqui
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       setCurrentDragX(moveEvent.clientX)
       const currentDelta = moveEvent.clientX - dragStartX
+      const absDelta = Math.abs(currentDelta)
 
-      // Apenas feedback visual durante o movimento
-      if (Math.abs(currentDelta) > 30) {
+              // Calcula progresso do drag (0-100)
+        const maxDrag = DRAG_CONFIG.MAX_DRAG_DISTANCE
+        const progress = Math.min((absDelta / maxDrag) * 100, 100)
+        setDragProgress(progress)
+
+      // Define direção do drag
+      if (absDelta > DRAG_CONFIG.THRESHOLD) {
+        const newDirection = currentDelta > 0 ? "right" : "left"
+        if (dragDirection !== newDirection) {
+          setDragDirection(newDirection)
+          // Haptic feedback ao mudar direção
+          triggerHapticFeedback("light")
+        }
+      } else {
+        setDragDirection(null)
+      }
+
+      // Feedback visual aprimorado durante o movimento
+      if (absDelta > DRAG_CONFIG.THRESHOLD) {
         if (currentDelta > 0) {
           // DIREITA = PAUSE (executar imediatamente)
+          console.log(`🔄 Drag para direita detectado: status=${task.status}, lastAction=${lastActionExecuted}`)
+
           if (
             lastActionExecuted !== "pause" &&
             (task.status === "in_progress" || task.status === "waiting")
           ) {
+            console.log(`✅ Condições para pausar atendidas, executando...`)
+
             const pauseTaskAndReload = async () => {
               try {
-                await invoke("pause_task", { taskId: task.id })
-                console.log("✅ Tarefa pausada, recarregando dados...")
-                if (onDragAction && task.id) {
-                  onDragAction(task.id, "pause")
+                console.log("⏸️ Iniciando processo de pausar tarefa...")
+
+                // 🔧 SINCRONIZAÇÃO CRÍTICA: Sincroniza tempo antes de pausar
+                const syncedTime = await syncTimeBeforePause(task.id!)
+
+                if (syncedTime !== null && syncedTime !== undefined) {
+                  console.log(`✅ Tempo sincronizado: ${syncedTime}s, pausando tarefa...`)
+
+                  // Agora pausa a tarefa
+                  await invoke("pause_task", { taskId: task.id })
+                  console.log("✅ Tarefa pausada com sucesso!")
+
+                  // Recarrega dados se callback disponível
+                  if (onDragAction && task.id) {
+                    onDragAction(task.id, "pause")
+                  }
+                } else {
+                  console.error("❌ Falha ao sincronizar tempo, tentando pausar mesmo assim...")
+
+                  // Tenta pausar mesmo sem sync bem-sucedido
+                  await invoke("pause_task", { taskId: task.id })
+                  console.log("✅ Tarefa pausada (sem sync de tempo)")
+
+                  if (onDragAction && task.id) {
+                    onDragAction(task.id, "pause")
+                  }
                 }
               } catch (error) {
                 console.error("❌ Erro ao pausar tarefa:", error)
@@ -222,6 +501,10 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
             }
             pauseTaskAndReload()
             setLastActionExecuted("pause")
+            // Haptic feedback ao pausar
+            triggerHapticFeedback("medium")
+          } else {
+            console.log(`❌ Condições para pausar não atendidas: lastAction=${lastActionExecuted}, status=${task.status}`)
           }
           setShouldSwapElements(false)
         } else {
@@ -237,9 +520,10 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
       setIsDragging(false)
 
       const deltaX = upEvent.clientX - dragStartX
+      const absDelta = Math.abs(deltaX)
 
       // Executar ação de START quando soltar (movimento para esquerda)
-      if (Math.abs(deltaX) > 30 && deltaX < 0) {
+      if (absDelta > DRAG_CONFIG.THRESHOLD && deltaX < 0) {
         // ESQUERDA = START (executar quando soltar)
         console.log("gabriel aqui start task")
         if (
@@ -253,6 +537,7 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
                 taskId: task.id,
                 stopAndStart: true
               })
+              queryClient.invalidateQueries({ queryKey: ["active-task"] })
               console.log("✅ Tarefa iniciada, recarregando dados...")
               // Chamar o callback para recarregar dados
               if (onDragAction && task.id) {
@@ -261,19 +546,24 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
             } catch (error) {
               console.error("❌ Erro ao iniciar tarefa:", error)
             }
+                      }
+            startTaskAndReload()
+            setLastActionExecuted("start")
+            // Haptic feedback ao iniciar
+            triggerHapticFeedback("medium")
           }
-          startTaskAndReload()
-          setLastActionExecuted("start")
         }
-      }
 
       // Reset visual elements se não houve movimento suficiente
-      if (Math.abs(deltaX) < 30) {
+      if (absDelta < DRAG_CONFIG.THRESHOLD) {
         setShouldSwapElements(false)
       }
 
-      // Cleanup
+      // Cleanup com animação suave
       setCurrentDragX(0)
+      setDragProgress(0)
+      setDragDirection(null)
+
       // Reset lastActionExecuted após um delay para permitir nova ação
       setTimeout(() => setLastActionExecuted(null), 500)
       window.removeEventListener("mousemove", handleMouseMove)
@@ -284,14 +574,19 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
     window.addEventListener("mouseup", handleMouseUp)
   }
 
-  // Handlers para drag customizado com touch
+  // Handlers para drag customizado com touch melhorado
   const handleTouchStart = (e: React.TouchEvent) => {
     e.preventDefault()
     e.stopPropagation()
     const touch = e.touches[0]
+
+    // Reset estados de drag
     setIsDragging(true)
     setDragStartX(touch.clientX)
     setCurrentDragX(touch.clientX)
+    setDragProgress(0)
+    setDragDirection(null)
+
     // NÃO resetar lastActionExecuted aqui
 
     const handleTouchMove = (moveEvent: TouchEvent) => {
@@ -299,20 +594,64 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
       if (touch) {
         setCurrentDragX(touch.clientX)
         const currentDelta = touch.clientX - dragStartX
+        const absDelta = Math.abs(currentDelta)
 
-        // Apenas feedback visual durante o movimento
-        if (Math.abs(currentDelta) > 30) {
+        // Calcula progresso do drag (0-100)
+        const maxDrag = DRAG_CONFIG.MAX_DRAG_DISTANCE
+        const progress = Math.min((absDelta / maxDrag) * 100, 100)
+        setDragProgress(progress)
+
+        // Define direção do drag
+        if (absDelta > DRAG_CONFIG.THRESHOLD) {
+          const newDirection = currentDelta > 0 ? "right" : "left"
+          if (dragDirection !== newDirection) {
+            setDragDirection(newDirection)
+            // Haptic feedback ao mudar direção
+            triggerHapticFeedback("light")
+          }
+        } else {
+          setDragDirection(null)
+        }
+
+        // Feedback visual aprimorado durante o movimento
+        if (absDelta > DRAG_CONFIG.THRESHOLD) {
           if (currentDelta > 0) {
+            console.log(`🔄 Drag para direita detectado (touch): status=${task.status}, lastAction=${lastActionExecuted}`)
+
             if (
               lastActionExecuted !== "pause" &&
               (task.status === "in_progress" || task.status === "waiting")
             ) {
+              console.log(`✅ Condições para pausar atendidas (touch), executando...`)
+
               const pauseTaskAndReload = async () => {
                 try {
-                  await invoke("pause_task", { taskId: task.id })
-                  console.log("✅ Tarefa pausada, recarregando dados...")
-                  if (onDragAction && task.id) {
-                    onDragAction(task.id, "pause")
+                  console.log("⏸️ Iniciando processo de pausar tarefa (touch)...")
+
+                  // 🔧 SINCRONIZAÇÃO CRÍTICA: Sincroniza tempo antes de pausar
+                  const syncedTime = await syncTimeBeforePause(task.id!)
+
+                  if (syncedTime !== null && syncedTime !== undefined) {
+                    console.log(`✅ Tempo sincronizado: ${syncedTime}s, pausando tarefa...`)
+
+                    // Agora pausa a tarefa
+                    await invoke("pause_task", { taskId: task.id })
+                    console.log("✅ Tarefa pausada com sucesso!")
+
+                    // Recarrega dados se callback disponível
+                    if (onDragAction && task.id) {
+                      onDragAction(task.id, "pause")
+                    }
+                  } else {
+                    console.error("❌ Falha ao sincronizar tempo, tentando pausar mesmo assim...")
+
+                    // Tenta pausar mesmo sem sync bem-sucedido
+                    await invoke("pause_task", { taskId: task.id })
+                    console.log("✅ Tarefa pausada (sem sync de tempo)")
+
+                    if (onDragAction && task.id) {
+                      onDragAction(task.id, "pause")
+                    }
                   }
                 } catch (error) {
                   console.error("❌ Erro ao pausar tarefa:", error)
@@ -320,6 +659,10 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
               }
               pauseTaskAndReload()
               setLastActionExecuted("pause")
+              // Haptic feedback ao pausar
+              triggerHapticFeedback("medium")
+            } else {
+              console.log(`❌ Condições para pausar não atendidas (touch): lastAction=${lastActionExecuted}, status=${task.status}`)
             }
             setShouldSwapElements(false)
           } else {
@@ -338,16 +681,16 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
       const touch = endEvent.changedTouches[0]
       if (touch) {
         const deltaX = touch.clientX - dragStartX
+        const absDelta = Math.abs(deltaX)
 
         // Executar ação de START quando soltar (movimento para esquerda)
-        if (Math.abs(deltaX) > 30 && deltaX < 0) {
+        if (absDelta > DRAG_CONFIG.THRESHOLD && deltaX < 0) {
           // ESQUERDA = START (executar quando soltar)
           console.log("gabriel aqui start task")
           if (
             lastActionExecuted !== "start" &&
             (task.status === "pending" || task.status === "paused")
           ) {
-            // Chamar start_task diretamente e depois recarregar dados
             const startTaskAndReload = async () => {
               try {
                 await invoke("start_task", {
@@ -355,6 +698,7 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
                   stopAndStart: true
                 })
                 console.log("✅ Tarefa iniciada, recarregando dados...")
+                queryClient.invalidateQueries({ queryKey: ["active-task"] })
                 // Chamar o callback para recarregar dados
                 if (onDragAction && task.id) {
                   onDragAction(task.id, "start")
@@ -365,17 +709,22 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
             }
             startTaskAndReload()
             setLastActionExecuted("start")
+            // Haptic feedback ao iniciar
+            triggerHapticFeedback("medium")
           }
         }
 
         // Reset visual elements se não houve movimento suficiente
-        if (Math.abs(deltaX) < 30) {
+        if (absDelta < DRAG_CONFIG.THRESHOLD) {
           setShouldSwapElements(false)
         }
       }
 
-      // Cleanup
+      // Cleanup com animação suave
       setCurrentDragX(0)
+      setDragProgress(0)
+      setDragDirection(null)
+
       // Reset lastActionExecuted após um delay para permitir nova ação
       setTimeout(() => setLastActionExecuted(null), 500)
       window.removeEventListener("touchmove", handleTouchMove)
@@ -409,6 +758,35 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
 
   const dragOffset = isDragging ? currentDragX - dragStartX : 0
 
+  // Calcula estilos de feedback visual para o drag
+  const getDragFeedbackStyle = () => {
+    if (!isDragging) return {}
+
+    const opacity = Math.min(dragProgress / 100, 0.8)
+    const scale = 1 + (dragProgress / 100) * 0.05
+
+    return {
+      opacity: 0.8 + opacity * 0.2,
+      transform: `scale(${scale})`,
+      transition: `all ${DRAG_CONFIG.ANIMATION_DURATION}ms ease-out`
+    }
+  }
+
+  // Estilo para indicador de direção
+  const getDirectionIndicatorStyle = () => {
+    if (!dragDirection || !isDragging) return {}
+
+    const baseColor = dragDirection === "left" ? "#17FF8B" : "#FF6B6B"
+    const intensity = Math.min(dragProgress / 100, 1)
+
+    return {
+      backgroundColor: baseColor,
+      opacity: intensity * 0.3,
+      transform: `scale(${0.8 + intensity * 0.4})`,
+      transition: `all ${DRAG_CONFIG.ANIMATION_DURATION}ms ease-out`
+    }
+  }
+
   const handleSettingsClick = async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -432,13 +810,17 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
 
         <div
           className={`flex w-[85%] items-stretch transition-all duration-300 ${
-            isSwapped || shouldSwapElements ? "flex-row-reverse" : "flex-row"
+            // Se está pausada, sempre fica na direita (não invertido)
+            // Se está ativa, pode estar invertido por drag ou status
+            task.status === "paused" ? "flex-row" : (isSwapped || shouldSwapElements ? "flex-row-reverse" : "flex-row")
           }`}
         >
           <div className="flex flex-col justify-center w-[47%]">
             <span
               className={`font-medium text-xs truncate max-w-full ${
-                isSwapped || shouldSwapElements ? "text-center" : ""
+                // Se está pausada, sempre centraliza na direita
+                // Se está ativa, centraliza se estiver invertida
+                task.status === "paused" ? "text-center" : (isSwapped || shouldSwapElements ? "text-center" : "")
               }`}
               title={task.name}
             >
@@ -459,11 +841,22 @@ export function TaskButton({ task, onDragAction,isListView,listViewAnchorRef  }:
                 ? `translateX(${Math.min(Math.max(dragOffset, -50), 50)}px)`
                 : "translateX(0px)",
               touchAction: "none",
-              userSelect: "none"
+              userSelect: "none",
+              ...getDragFeedbackStyle()
             }}
             onMouseDown={handleMouseDown}
             onTouchStart={handleTouchStart}
           >
+            {/* Indicador de direção do drag */}
+            {isDragging && dragDirection && (
+              <div
+                className="absolute inset-0 rounded-full pointer-events-none z-10"
+                style={getDirectionIndicatorStyle()}
+              />
+            )}
+
+            {/* Indicador de progresso do drag */}
+
             {/* Background com animação */}
             <div
               className={`absolute inset-0 rounded-full transition-all duration-300 ${getButtonStyle()}`}

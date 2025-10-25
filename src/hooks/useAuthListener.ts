@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { useUserStore } from '../store';
+
 
 export const useAuthListener = () => {
-  const { setAuth, setAuthenticated } = useUserStore();
+
 
   useEffect(() => {
     const unlisten = listen('auth-data-received', (event) => {
@@ -17,13 +17,6 @@ export const useAuthListener = () => {
         localStorage.setItem('auth_token', authData.token);
         localStorage.setItem('auth_session_id', authData.sessionId);
 
-        // Atualizar o estado do Zustand
-        setAuth({
-          token: authData.token,
-          sessionId: authData.sessionId,
-          authenticated: true
-        });
-        setAuthenticated(true);
 
         console.log('✅ Dados salvos no localStorage e estado atualizado');
       } catch (error) {
@@ -34,5 +27,5 @@ export const useAuthListener = () => {
     return () => {
       unlisten.then(f => f());
     };
-  }, [setAuth, setAuthenticated]);
+  }, []);
 };

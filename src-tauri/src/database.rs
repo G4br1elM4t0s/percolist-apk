@@ -1,14 +1,26 @@
 use rusqlite::{Connection, Result as SqliteResult};
 use std::sync::{Arc, Mutex};
+use std::path::PathBuf;
+use std::env;
+use std::fs;
 
 pub struct DatabaseState {
     pub connection: Arc<Mutex<Connection>>,
 }
 
 pub fn init_database() -> SqliteResult<Connection> {
-    let conn = Connection::open("tasks.db")?;
+    // Resolve caminho do banco fora do código-fonte para evitar rebuilds do watcher
+    // Usamos a pasta de dados do sistema + nome do app
+    let db_path: PathBuf = {
+        let base = dirs::data_dir().unwrap_or_else(|| env::current_dir().unwrap());
+        let app_dir = base.join("Percolist");
+        let _ = fs::create_dir_all(&app_dir);
+        app_dir.join("db.sqlite")
+    };
 
-    // Criar tabela original primeiro
+    println!("📦 Usando banco de dados em: {}", db_path.display());
+    let conn = Connection::open(db_path)?;
+
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,15 +31,18 @@ pub fn init_database() -> SqliteResult<Connection> {
             status TEXT NOT NULL DEFAULT 'pending',
             created_at TEXT NOT NULL,
             started_at TEXT,
-            completed_at TEXT
+            completed_at TEXT,
+            description TEXT,
+            end_date TEXT,
+            should_count BOOLEAN NOT NULL DEFAULT 1,
+            count_value INTEGER NOT NULL DEFAULT 0,
+            pomodoro_cycles INTEGER NOT NULL DEFAULT 4
         )",
         [],
     )?;
 
-    // Migrar banco para adicionar novas colunas se elas não existirem
     migrate_database(&conn)?;
 
-    // Criar outras tabelas
     conn.execute(
         "CREATE TABLE IF NOT EXISTS task_time_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,8 +59,10 @@ pub fn init_database() -> SqliteResult<Connection> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             task_id INTEGER NOT NULL,
             session_number INTEGER NOT NULL,
-            session_type TEXT NOT NULL CHECK (session_type IN ('work', 'break')),
+            session_type TEXT NOT NULL CHECK (session_type IN ('work', 'mini_break', 'long_break')),
             duration_seconds INTEGER NOT NULL,
+            remaining_seconds INTEGER NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'paused', 'completed')) DEFAULT 'pending',
             created_at TEXT NOT NULL,
             FOREIGN KEY (task_id) REFERENCES tasks (id) ON DELETE CASCADE
         )",
@@ -59,6 +76,23 @@ pub fn init_database() -> SqliteResult<Connection> {
             started_at TEXT NOT NULL,
             FOREIGN KEY (task_id) REFERENCES tasks (id) ON DELETE CASCADE,
             FOREIGN KEY (pomodoro_id) REFERENCES pomodoro_sessions (id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // Nova tabela para estados do Pomodoro
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS pomodoro_states (
+            task_id TEXT PRIMARY KEY,
+            current_cycle INTEGER NOT NULL,
+            total_cycles INTEGER NOT NULL,
+            current_time INTEGER NOT NULL,
+            is_running BOOLEAN NOT NULL,
+            is_paused BOOLEAN NOT NULL,
+            session_type TEXT NOT NULL,
+            total_worked_minutes INTEGER NOT NULL,
+            completed_cycles INTEGER NOT NULL,
+            updated_at TEXT NOT NULL
         )",
         [],
     )?;
@@ -83,6 +117,7 @@ fn migrate_database(conn: &Connection) -> SqliteResult<()> {
     let mut has_end_date = false;
     let mut has_should_count = false;
     let mut has_count_value = false;
+    let mut has_pomodoro_cycles = false;
 
     // Verificar estrutura da tabela
     let mut stmt = conn.prepare("PRAGMA table_info(tasks)")?;
@@ -97,6 +132,7 @@ fn migrate_database(conn: &Connection) -> SqliteResult<()> {
             "end_date" => has_end_date = true,
             "should_count" => has_should_count = true,
             "count_value" => has_count_value = true,
+            "pomodoro_cycles" => has_pomodoro_cycles = true,
             _ => {}
         }
     }
@@ -120,6 +156,11 @@ fn migrate_database(conn: &Connection) -> SqliteResult<()> {
     if !has_count_value {
         println!("🔄 Adicionando coluna 'count_value' à tabela tasks");
         conn.execute("ALTER TABLE tasks ADD COLUMN count_value INTEGER NOT NULL DEFAULT 0", [])?;
+    }
+
+    if !has_pomodoro_cycles {
+        println!("🔄 Adicionando coluna 'pomodoro_cycles' à tabela tasks");
+        conn.execute("ALTER TABLE tasks ADD COLUMN pomodoro_cycles INTEGER NOT NULL DEFAULT 4", [])?;
     }
 
     println!("✅ Migração do banco de dados concluída");

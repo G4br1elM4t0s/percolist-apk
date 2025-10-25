@@ -1,0 +1,11 @@
+{
+  "version": "v1.0.0",
+  "notes": "Versão inicial com auto-update",
+  "pub_date": "2024-01-15T10:00:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTWkZCZ1YrdEI4YlpyTEdHajVvU3IycWF2N0xwb1Rpd0dVa3BMV0hvaER0MHVXRGU3TCtPMTdtUi8wUU1XU2htS3lyZUdZcDNQVm90alpiYXl4Y3l2cGhsbFFubGNhb3c0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzUzODMzNzEzCWZpbGU6UGVyY29saXN0X1BhbmVsXzEuMC4wX3g2NC1zZXR1cC5leGUKVGg5SWpidWV3QTB3dFZucTlUOThoV2Y4NEdoUlBJekVhdnVDamhhaFJ0eCtEMFNuOVRaUEZlSUxnS2N3T0FHQUg1b1BwcUE0WUVtbmtoZXU0Yks3QlE9PQo=",
+      "url": "https://api.percolist.com.br/updates/win32/x64/Percolist_Panel_1.0.0_x64-setup.exe"
+    }
+  }
+}

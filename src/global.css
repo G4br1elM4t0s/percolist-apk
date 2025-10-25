@@ -22,6 +22,9 @@ body {
   line-height: 1;
 }
 
+#myDiv {
+  pointer-events: auto; /* só a divzinha é clicável */
+}
 #root {
   background-color: transparent;
   width: 100% !important;

@@ -1,0 +1,11 @@
+{
+  "version": "v1.0.2",
+  "notes": "Correções de bugs e melhorias de performance",
+  "pub_date": "2024-01-15T10:00:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "Content of Percolist_Panel_1.0.2_x64-setup.exe.sig",
+      "url": "https://api.percolist.com.br/downloads/Percolist_Panel_1.0.2_x64-setup.exe"
+    }
+  }
+}

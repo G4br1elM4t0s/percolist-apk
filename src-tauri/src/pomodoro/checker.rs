@@ -101,7 +101,7 @@ pub async fn load_tasks_with_sessions(db_state: State<'_, DatabaseState>) -> Res
 
     let mut stmt = conn.prepare(
         "SELECT t.id, t.name, t.description, t.user, t.estimated_hours, t.scheduled_date, t.end_date, t.status,
-                t.created_at, t.started_at, t.completed_at, t.should_count, t.count_value,
+                t.created_at, t.started_at, t.completed_at, t.should_count, t.count_value, t.pomodoro_cycles,
                 a.started_at as session_started_at, p.session_type, p.duration_seconds
          FROM tasks t
          LEFT JOIN active_sessions a ON t.id = a.task_id
@@ -117,9 +117,9 @@ pub async fn load_tasks_with_sessions(db_state: State<'_, DatabaseState>) -> Res
 
     let task_iter = stmt.query_map([], |row| {
         let task_id: i64 = row.get(0)?;
-        let session_started_at: Option<String> = row.get(13)?;
-        let session_type: Option<String> = row.get(14)?;
-        let duration_seconds: Option<i32> = row.get(15)?;
+        let session_started_at: Option<String> = row.get(14)?;
+        let session_type: Option<String> = row.get(15)?;
+        let duration_seconds: Option<i32> = row.get(16)?;
 
         let active_session = if let (Some(started_at), Some(s_type), Some(duration)) =
             (session_started_at, session_type, duration_seconds) {
@@ -152,6 +152,7 @@ pub async fn load_tasks_with_sessions(db_state: State<'_, DatabaseState>) -> Res
             completed_at: row.get(10)?,
             should_count: row.get(11)?,
             count_value: row.get(12)?,
+            pomodoro_cycles: row.get(13)?,
             active_session,
             pomodoro_sessions: Vec::new(), // Será preenchido depois
         })

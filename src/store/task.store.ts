@@ -98,16 +98,13 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         scheduledDate: task.scheduled_date,
         endDate: task.end_date || null,
         shouldCount: task.should_count,
-        countValue: task.count_value
+        countValue: task.count_value,
+        pomodoroCycles: 4
       }
 
-      console.log("Enviando dados do formulário para o Rust:", params)
-
       const newTask = await invoke<Task>("add_task", params)
-
       console.log("Task adicionada com sucesso:", newTask)
 
-      // Recarregar ambos os tipos de dados
       await Promise.all([get().loadTasks(), get().loadTasksWithSessions()])
     } catch (error) {
       console.error("Erro detalhado ao chamar add_task no Rust:", error)

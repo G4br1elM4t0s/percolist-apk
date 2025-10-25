@@ -2,13 +2,15 @@ use crate::models::*;
 use crate::database::DatabaseState;
 use tauri::State;
 use chrono::Utc;
+use rusqlite::Row;
+
 
 #[tauri::command]
 pub async fn load_tasks(db_state: State<'_, DatabaseState>) -> Result<Vec<Task>, String> {
     let conn = db_state.connection.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn.prepare(
-        "SELECT id, name, description, user, estimated_hours, scheduled_date, end_date, status, created_at, started_at, completed_at, should_count, count_value
+        "SELECT id, name, description, user, estimated_hours, scheduled_date, end_date, status, created_at, started_at, completed_at, should_count, count_value, pomodoro_cycles
          FROM tasks ORDER BY scheduled_date ASC, created_at ASC"
     ).map_err(|e| e.to_string())?;
 
@@ -27,6 +29,7 @@ pub async fn load_tasks(db_state: State<'_, DatabaseState>) -> Result<Vec<Task>,
             completed_at: row.get(10)?,
             should_count: row.get(11)?,
             count_value: row.get(12)?,
+            pomodoro_cycles: row.get(13)?,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -48,14 +51,15 @@ pub async fn add_task(
     end_date: Option<String>,
     should_count: bool,
     count_value: u32,
-    db_state: State<'_, DatabaseState>
+    pomodoro_cycles: u32,
+    db_state: State<'_, DatabaseState>,
 ) -> Result<Task, String> {
     let conn = db_state.connection.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
 
     conn.execute(
-        "INSERT INTO tasks (name, description, user, estimated_hours, scheduled_date, end_date, status, created_at, should_count, count_value)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', ?7, ?8, ?9)",
+        "INSERT INTO tasks (name, description, user, estimated_hours, scheduled_date, end_date, status, created_at, should_count, count_value, pomodoro_cycles)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', ?7, ?8, ?9, ?10)",
         rusqlite::params![
             &name,
             description.as_deref(),
@@ -65,15 +69,15 @@ pub async fn add_task(
             end_date.as_deref(),
             &now,
             should_count,
-            count_value
+            count_value,
+            pomodoro_cycles,
         ],
     ).map_err(|e| e.to_string())?;
 
     let id = conn.last_insert_rowid();
 
-    // Criar sessões Pomodoro automaticamente quando a tarefa é criada
-    crate::pomodoro::create_pomodoro_cycles(&conn, id).map_err(|e| e.to_string())?;
-    println!("🍅 Sessões Pomodoro criadas automaticamente para tarefa {}", id);
+    crate::pomodoro::create_pomodoro_cycles(&conn, id, estimated_hours, pomodoro_cycles)
+    .map_err(|e| e.to_string())?;
 
     Ok(Task {
         id: Some(id),
@@ -89,7 +93,98 @@ pub async fn add_task(
         completed_at: None,
         should_count,
         count_value,
+        pomodoro_cycles,
     })
+}
+
+
+
+
+
+#[tauri::command]
+pub async fn get_task_pomodoro_cycles(task_id: i64, db_state: State<'_, DatabaseState>) -> Result<u32, String> {
+    let conn = db_state.connection.lock().map_err(|e| e.to_string())?;
+
+    let mut stmt = conn.prepare("SELECT pomodoro_cycles FROM tasks WHERE id = ?1").map_err(|e| e.to_string())?;
+    let pomodoro_cycles: u32 = stmt.query_row([task_id], |row| row.get(0)).map_err(|e| e.to_string())?;
+    Ok(pomodoro_cycles)
+}
+
+
+
+
+#[tauri::command]
+pub async fn get_pomodoro_sessions_by_task(
+    task_id: i64,
+    db_state: State<'_, DatabaseState>
+) -> Result<Vec<PomodoroSession>, String> {
+    let conn = db_state.connection.lock().map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, task_id, session_number, session_type,
+                    duration_seconds, remaining_seconds, status, created_at
+             FROM pomodoro_sessions
+             WHERE task_id = ?1
+             ORDER BY session_number ASC, id ASC"
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map([task_id], |row: &Row| {
+            Ok(PomodoroSession {
+                id: Some(row.get(0)?),
+                task_id: row.get(1)?,
+                session_number: row.get(2)?,
+                session_type: row.get(3)?,
+                duration_seconds: row.get(4)?,
+                remaining_seconds: row.get(5)?,
+                status: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    // coleta tudo em Vec
+    let mut sessions = Vec::new();
+    for s in rows {
+        sessions.push(s.map_err(|e| e.to_string())?);
+    }
+
+    Ok(sessions) // se não houver linhas, volta []
+}
+
+
+
+#[tauri::command]
+pub async fn update_pomodoro_session(
+    db_state: State<'_, DatabaseState>,
+    session_id: i64,
+    remaining_seconds: i32,
+    status: String, // valide abaixo
+) -> Result<(), String> {
+    // valida status (FSM simples)
+    const ALLOWED: &[&str] = &["pending", "running", "paused", "completed"];
+    if !ALLOWED.contains(&status.as_str()) {
+        return Err("Status inválido".into());
+    }
+
+    let conn = db_state.connection.lock().map_err(|e| e.to_string())?;
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+
+    let affected = tx.execute(
+        "UPDATE pomodoro_sessions
+         SET remaining_seconds = ?1, status = ?2
+         WHERE id = ?3",
+        (remaining_seconds, status, session_id),
+    ).map_err(|e| e.to_string())?;
+
+    if affected != 1 {
+        return Err("Sessão não encontrada ou não atualizada".into());
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -201,6 +296,7 @@ pub async fn get_task_by_id(task_id: i64, db_state: State<'_, DatabaseState>) ->
             completed_at: row.get(10)?,
             should_count: row.get(11)?,
             count_value: row.get(12)?,
+            pomodoro_cycles: row.get(13)?,
             active_session,
             pomodoro_sessions,
         })
@@ -240,7 +336,7 @@ pub async fn get_today_tasks(db_state: State<'_, DatabaseState>) -> Result<Vec<T
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
     let mut stmt = conn.prepare(
-        "SELECT id, name, description, user, estimated_hours, scheduled_date, end_date, status, created_at, started_at, completed_at, should_count, count_value
+        "SELECT id, name, description, user, estimated_hours, scheduled_date, end_date, status, created_at, started_at, completed_at, should_count, count_value, pomodoro_cycles
          FROM tasks WHERE scheduled_date = ?1 ORDER BY created_at ASC"
     ).map_err(|e| e.to_string())?;
 
@@ -259,6 +355,7 @@ pub async fn get_today_tasks(db_state: State<'_, DatabaseState>) -> Result<Vec<T
             completed_at: row.get(10)?,
             should_count: row.get(11)?,
             count_value: row.get(12)?,
+            pomodoro_cycles: row.get(13)?,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -268,4 +365,28 @@ pub async fn get_today_tasks(db_state: State<'_, DatabaseState>) -> Result<Vec<T
     }
 
     Ok(tasks)
+}
+
+
+#[tauri::command]
+pub async fn get_active_task_id(
+    db_state: State<'_, DatabaseState>
+) -> Result<i64, String> {
+    let conn = db_state.connection.lock().map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare("SELECT id FROM tasks WHERE status = 'in_progress' LIMIT 1")
+        .map_err(|e| e.to_string())?;
+
+    let id: i64 = stmt
+        .query_row([], |row| row.get(0))
+        .map_err(|e| {
+            if let rusqlite::Error::QueryReturnedNoRows = e {
+                "Nenhuma task ativa encontrada".to_string()
+            } else {
+                e.to_string()
+            }
+        })?;
+
+    Ok(id)
 }

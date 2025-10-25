@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react"
+﻿import { useEffect, useState, useRef } from "react"
 import { useTaskStore } from "./store/task.store"
 import { TaskFooter } from "./componnets/TaskFooter"
 import { TaskModal } from "./componnets/TaskModal"
@@ -6,11 +6,58 @@ import { usePomodoroChecker } from "./hooks/usePomodoroChecker"
 import { useAutoResize } from "./hooks/useAutoResize"
 import { useAuthListener } from "./hooks/useAuthListener"
 import { invoke } from "@tauri-apps/api/core"
+import { check } from '@tauri-apps/plugin-updater'
+import { ask, message } from '@tauri-apps/plugin-dialog'
+
+import { useAuthReleaseAndBlock } from "./hooks/useAuthReleaseAndBlock";
+
+async function checkForAppUpdates(onUserClick: boolean = false) {
+  try {
+    const update = await check();
+    if (update === null) {
+      await message('Falha ao verificar atualizações.\nTente novamente mais tarde.', {
+        title: 'Erro',
+        kind: 'error',
+        okLabel: 'OK'
+      });
+      return;
+    } else if (update?.available) {
+      const yes = await ask(`Atualização para ${update.version} disponível!\n\nNotas da versão: ${update.body}`, {
+        title: 'Atualização Disponível',
+        kind: 'info',
+        okLabel: 'Atualizar',
+        cancelLabel: 'Cancelar'
+      });
+      if (yes) {
+        await update.downloadAndInstall();
+        // Reiniciar o app após a atualização
+        await invoke("graceful_restart");
+      }
+    } else if (onUserClick) {
+      await message('Você está na versão mais recente. Continue incrível!', {
+        title: 'Nenhuma Atualização Disponível',
+        kind: 'info',
+        okLabel: 'OK'
+      });
+    }
+  } catch (err) {
+    console.error('Erro ao verificar atualizações:', err);
+    if (onUserClick) {
+      await message('Erro ao verificar atualizações. Tente novamente mais tarde.', {
+        title: 'Erro',
+        kind: 'error',
+        okLabel: 'OK'
+      });
+    }
+  }
+}
 
 function App() {
   const { loadTasks, loadTasksWithSessions } = useTaskStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  useAuthReleaseAndBlock()
+
 
   // Ref para ajuste automático de altura
   const contentRef = useAutoResize([isModalOpen])
@@ -24,6 +71,8 @@ function App() {
   useEffect(() => {
     const init = async () => {
       await Promise.all([loadTasks(), loadTasksWithSessions()])
+      // Verificar atualizações na inicialização
+      await checkForAppUpdates()
     }
     init()
   }, [])
@@ -56,10 +105,10 @@ function App() {
   }, [isModalOpen])
 
   return (
-    <div ref={contentRef} className="fixed top-0 left-0 right-0">
-      <TaskFooter onAddClick={handleOpenModal} buttonRef={buttonRef} isModalOpen={isModalOpen} />
-      <TaskModal isOpen={isModalOpen} onClose={handleCloseModal} anchorEl={buttonRef} />
-    </div>
+      <div ref={contentRef} className="fixed top-0 left-0 right-0">
+        <TaskFooter onAddClick={handleOpenModal} buttonRef={buttonRef} isModalOpen={isModalOpen} />
+        <TaskModal isOpen={isModalOpen} onClose={handleCloseModal} anchorEl={buttonRef} />
+      </div>
   )
 }
 

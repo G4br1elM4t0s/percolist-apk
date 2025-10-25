@@ -1,0 +1,23 @@
+{
+  "version": "v1.0.2",
+  "notes": "Correções de bugs e melhorias de performance",
+  "pub_date": "2024-01-15T10:00:00Z",
+  "platforms": {
+    "darwin-x86_64": {
+      "signature": "Content of Percolist_Panel_1.0.2_x64.dmg.sig",
+      "url": "https://github.com/seu-usuario/seu-repo/releases/download/v1.0.2/Percolist_Panel_1.0.2_x64.dmg"
+    },
+    "darwin-aarch64": {
+      "signature": "Content of Percolist_Panel_1.0.2_arm64.dmg.sig",
+      "url": "https://github.com/seu-usuario/seu-repo/releases/download/v1.0.2/Percolist_Panel_1.0.2_arm64.dmg"
+    },
+    "linux-x86_64": {
+      "signature": "Content of Percolist_Panel_1.0.2_amd64.AppImage.sig",
+      "url": "https://github.com/seu-usuario/seu-repo/releases/download/v1.0.2/Percolist_Panel_1.0.2_amd64.AppImage"
+    },
+    "windows-x86_64": {
+      "signature": "Content of Percolist_Panel_1.0.2_x64-setup.exe.sig",
+      "url": "https://github.com/seu-usuario/seu-repo/releases/download/v1.0.2/Percolist_Panel_1.0.2_x64-setup.exe"
+    }
+  }
+}

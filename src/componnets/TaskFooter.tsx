@@ -1,24 +1,115 @@
-import { useTaskStore } from "../store/task.store"
-import { useState, useEffect, useMemo, useRef } from "react"
+﻿import { useTaskStore } from "../store/task.store"
+import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import type { RefObject } from "react"
-import { MenuDefaultIcon, MenuSuccessIcon } from "../components"
+import { ClockIcon, MenuDefaultIcon, MenuSuccessIcon } from "../components"
 // import { VolumeSlider } from "./VolumeSlider"
 import { TaskButton } from "./TaskButton"
 import Calendar from "./Calendar"
 import { TaskList } from "./TaskList"
 import { TaskListView } from "./TaskListView"
 import { invoke } from "@tauri-apps/api/core"
+// import { listen } from "@tauri-apps/api/event";
+
 import { CalendarIcon } from "../components/CalendarIcon"
 import { CalendarStartIcon } from "../components/CalendarStartIcon"
 
 import { CirclePlusIcon } from "../components/CirclePlusIcon"
 import { PlusSuccessIcon } from "../components/PlusSuccessIcon"
+// import { getCurrentWebviewWindow, WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { useCollapsedState, usePomodoroFlow } from "../hooks";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { formatTimeDisplay } from "../utils/format";
+import { secondsToDuration } from "../utils/time";
 
 interface TaskFooterProps {
   onAddClick: () => void
   buttonRef: RefObject<HTMLButtonElement | null>
   isModalOpen?: boolean
 }
+
+const teste = [
+  {
+      "id": 73,
+      "task_id": 10,
+      "session_number": 1,
+      "session_type": "work",
+      "duration_seconds": 60,
+      "remaining_seconds": 60,
+      "status": "running",
+      "created_at": "2025-08-11T11:50:33.840169600+00:00"
+  },
+  {
+      "id": 74,
+      "task_id": 10,
+      "session_number": 2,
+      "session_type": "mini_break",
+      "duration_seconds": 30,
+      "remaining_seconds": 30,
+      "status": "completed",
+      "created_at": "2025-08-11T11:50:33.840169600+00:00"
+  },
+  {
+      "id": 75,
+      "task_id": 10,
+      "session_number": 3,
+      "session_type": "work",
+      "duration_seconds": 60,
+      "remaining_seconds": 60,
+      "status": "paused",
+      "created_at": "2025-08-11T11:50:33.840169600+00:00"
+  },
+  {
+      "id": 76,
+      "task_id": 10,
+      "session_number": 4,
+      "session_type": "mini_break",
+      "duration_seconds": 30,
+      "remaining_seconds": 30,
+      "status": "pending",
+      "created_at": "2025-08-11T11:50:33.840169600+00:00"
+  },
+  {
+      "id": 77,
+      "task_id": 10,
+      "session_number": 5,
+      "session_type": "work",
+      "duration_seconds": 60,
+      "remaining_seconds": 60,
+      "status": "pending",
+      "created_at": "2025-08-11T11:50:33.840169600+00:00"
+  },
+  {
+      "id": 78,
+      "task_id": 10,
+      "session_number": 6,
+      "session_type": "mini_break",
+      "duration_seconds": 30,
+      "remaining_seconds": 30,
+      "status": "pending",
+      "created_at": "2025-08-11T11:50:33.840169600+00:00"
+  },
+  {
+      "id": 79,
+      "task_id": 10,
+      "session_number": 7,
+      "session_type": "work",
+      "duration_seconds": 60,
+      "remaining_seconds": 60,
+      "status": "pending",
+      "created_at": "2025-08-11T11:50:33.840169600+00:00"
+  },
+  {
+      "id": 80,
+      "task_id": 10,
+      "session_number": 8,
+      "session_type": "long_break",
+      "duration_seconds": 60,
+      "remaining_seconds": 60,
+      "status": "pending",
+      "created_at": "2025-08-11T11:50:33.840169600+00:00"
+  }
+]
+
 
 export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskFooterProps) {
   const {
@@ -35,17 +126,20 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
   const [isTaskListViewOpen, setIsTaskListViewOpen] = useState(false)
   const anchorRefButtonListTask = useRef<HTMLButtonElement | null>(null)
   const taskListViewRef = useRef<HTMLDivElement | null>(null)
+  const { isCollapsed } = useCollapsedState()
 
-  // Get today's tasks - usar dados com sessões quando disponível, excluindo concluídas
+  const queryClient = useQueryClient()
+  // const { screenWidth } = useScreenWidth()
+  const disabledRef = useRef(false);
+
+  // Otimizar cálculos com useMemo para evitar recálculos desnecessários
   const todayTasks = useMemo(() => {
     const todayTasksWithSessions = getTodayActiveTasksWithSessions()
     return todayTasksWithSessions.length > 0 ? todayTasksWithSessions : getTodayActiveTasks()
-  }, [tasksWithSessions, tasks])
+  }, [getTodayActiveTasksWithSessions, getTodayActiveTasks, tasksWithSessions, tasks])
 
-  // Estado local para a ordem das tarefas (para drag and drop)
   const [orderedTasks, setOrderedTasks] = useState(todayTasks)
 
-  // Atualizar ordem das tarefas quando todayTasks mudar
   useEffect(() => {
     setOrderedTasks(todayTasks)
   }, [todayTasks])
@@ -57,11 +151,10 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
   const datesWithTasks = useMemo(() => {
     return allTasks.map(task => {
       const [year, month, day] = task.scheduled_date.split("-").map(Number)
-      return new Date(year, month - 1, day) // month é 0-indexed
+      return new Date(year, month - 1, day)
     })
   }, [allTasks])
 
-  // Pegar tarefas do dia selecionado
   const getTasksForDate = useMemo(() => {
     return (date: Date) => {
       const dateStr = date.toISOString().split("T")[0]
@@ -69,16 +162,13 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
     }
   }, [allTasks])
 
-  // Update time every second
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date())
-    }, 1000)
-
-    return () => clearInterval(timer)
-  }, [])
-
-  // Reload automático removido - só recarrega quando necessário
+  // Remover o timer que atualiza currentTime a cada segundo - estava causando re-renderizações desnecessárias
+  // useEffect(() => {
+  //   const timer = setInterval(() => {
+  //     setCurrentTime(new Date())
+  //   }, 1000)
+  //   return () => clearInterval(timer)
+  // }, [])
 
   const handleDaySelect = (date: Date | undefined) => {
     if (date) {
@@ -105,7 +195,7 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
     setSelectedDate(null)
   }
 
-  // Fechar o TaskListView quando clicar fora
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -126,7 +216,6 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
     }
   }, [isTaskListViewOpen])
 
-  // Fechar o calendário quando clicar fora
   useEffect(() => {
     const handleClickOutside = async (event: MouseEvent) => {
       const target = event.target as HTMLElement
@@ -165,15 +254,108 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
       console.error("❌ TaskFooter - Erro ao recarregar dados:", error)
     }
   }
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+
+        if(!isCollapsed){
+          await invoke("disable_click_through");
+          disabledRef.current = false;
+          return
+        }
+
+        if (disabledRef.current) {
+          await invoke("enable_click_through");
+        } else {
+          await invoke("disable_click_through");
+        }
+
+        disabledRef.current = !disabledRef.current;
+      } catch (err) {
+        console.error("Erro ao alternar click-through:", err);
+      }
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [isCollapsed]);
+
+
+  const {
+    data: activeTaskId,
+  } = useQuery<number | null>({
+    queryKey: ["active-task"],
+    queryFn: async ()=> {
+     const activeTaskId = await invoke<number | null>("get_active_task_id")
+
+     console.log("activeTaskId", activeTaskId)
+     return activeTaskId
+    }
+  })
+
+  const { data: pomodoroSessionsData = [] } = useQuery({
+    queryKey: ["active-pomodoro-sessions", activeTaskId],
+    queryFn: async () => {
+      if (!activeTaskId) return [];
+      const rows = await invoke("get_pomodoro_sessions_by_task", { taskId: activeTaskId });
+      return Array.isArray(rows) ? rows : [];
+    },
+    enabled: !!activeTaskId,
+  });
+
+  const {
+    sessions,
+    currentSession
+  } = usePomodoroFlow(pomodoroSessionsData, activeTaskId);
+  useEffect(()=>{
+    console.log("pomodoroSessionsData", pomodoroSessionsData)
+  },[JSON.stringify(pomodoroSessionsData)])
+
+  // Usar o hook usePomodoroFlow com as sessões carregadas
+  useEffect(()=>{
+    console.log("activeTaskIsssss", sessions)
+  },[JSON.stringify(sessions)])
+
+  // console.log("sessions", sessions)
+
+
+
+
+
+  const pomodoroCycles = sessions?.length > 0 ? sessions?.filter((session: any) => session.session_type === "work") : []
+  const pomodoroCyclesCompleted = pomodoroCycles?.length > 0 ? pomodoroCycles?.filter((session: any) => session.status === "completed") : []
+
 
   return (
-    <div style={{ padding: "0px 16px" }} className="w-full bg-black text-white ">
-      <div className="h-[55px] flex items-center justify-between px-4 backdrop-blur-sm border-t border-[#7F7F7F]">
+    <div style={{ padding: "0px 16px" }} className="w-full bg-black text-white  ">
+      <div className="h-[55px] flex items-center relative z-10 justify-between px-4 backdrop-blur-sm border-t border-[#7F7F7F]">
         {/* Tasks Section */}
         <div className="flex items-center gap-3 flex-1 overflow-hidden">
           <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+            <div className="w-44 h-auto   gap-1 flex items-center justify-between">
+              <div className="flex flex-col items-center justify-center w-4/6">
+                <span className="text-[10px] font-bold text-white">POMODORO</span>
+                <div style={{
+                  padding: "4px"
+                }} className="flex items-center gap-1 bg-[#444444] w-full rounded-full">
+                  <div className="w-6 h-6 flex items-center justify-center bg-[#17FF8B] rounded-full">
+                    <ClockIcon className="w-6 h-6 text-white" />
+                  </div>
+                  <span className="text-[10px] font-bold text-white">{pomodoroCyclesCompleted.length}/{pomodoroCycles.length}</span>
+                  <div className="text-[10px] font-bold text-white">|</div>
+                  <span className="text-[10px] font-bold text-[#17FF8B]">{formatTimeDisplay(secondsToDuration(currentSession?.remaining_seconds || 0))}</span>
+                </div>
+              </div>
+              <div className="w-2/6  flex flex-col items-center justify-center">
+                <span className="text-[10px] text-white font-bold">TARREFAS</span>
+                <div style={{
+                  padding: "4px"
+                }}  className="flex items-center gap-1 bg-[#444444] w-full rounded-full h-8 justify-center">
+                <span  className="text-[10px] text-white font-bold flex items-center gap-1"><span className="text-[#17FF8B]">12</span> | 100</span>
+                </div>
+              </div>
+            </div>
             {orderedTasks.length === 0 ? (
-              <div className="text-gray-400">Nenhuma tarefa para hoje</div>
+              <div className="text-gray-400 text-center flex items-center justify-center">Nenhuma tarefa para hoje</div>
             ) : (
               <>
                 {orderedTasks.slice(0, 5).map((task, index) => (
@@ -196,6 +378,9 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
 
         {/* System Section with Add Button */}
         <div className="flex items-center gap-4 flex-shrink-0">
+               {/* Pomodoro Controls */}
+
+
                {/* Add Button */}
           <button
             ref={buttonRef}
@@ -210,7 +395,15 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
             )}
           </button>
 
-
+            <div>
+              {currentSession?.remaining_seconds }
+              {
+                currentSession?.session_type
+              }
+              {
+                currentSession?.session_number
+              }
+            </div>
           {/* Task List View Button */}
 
           <button
@@ -310,6 +503,19 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
             </div>
           </div>
         </div>
+      <div
+        id="myDiv"
+        onClick={async () => {
+          await invoke("disable_click_through");
+          await invoke("expand_window_for_modal");
+        }}
+
+        className="absolute top-[45px] left-1/2 transform -translate-x-1/2
+                  bg-black text-white p-4 h-5 w-16 z-50 rounded-lg
+                  flex items-center justify-center text-xs cursor-pointer hover:bg-red-800"
+      >
+        Abrir
+      </div>
       </div>
 
       {/* Task List View Modal */}

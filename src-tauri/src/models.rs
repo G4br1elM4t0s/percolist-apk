@@ -30,6 +30,7 @@ pub struct Task {
     pub completed_at: Option<String>,
     pub should_count: bool,
     pub count_value: u32,
+    pub pomodoro_cycles: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -47,6 +48,8 @@ pub struct PomodoroSession {
     pub session_number: i32,
     pub session_type: String, // "work" or "break"
     pub duration_seconds: i32,
+    pub remaining_seconds: i32,
+    pub status: String, // "pending", "running", "paused", "completed"
     pub created_at: String,
 }
 
@@ -72,6 +75,7 @@ pub struct TaskWithActiveSession {
     pub completed_at: Option<String>,
     pub should_count: bool,
     pub count_value: u32,
+    pub pomodoro_cycles: u32,
     pub active_session: Option<ActiveSessionInfo>,
     pub pomodoro_sessions: Vec<PomodoroSessionInfo>,
 }

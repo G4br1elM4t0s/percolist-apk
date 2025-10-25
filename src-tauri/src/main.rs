@@ -1,4 +1,4 @@
-#![cfg_attr(
+﻿#![cfg_attr(
     all(not(debug_assertions), target_os = "windows"),
     windows_subsystem = "windows"
 )]
@@ -30,11 +30,50 @@ use window::*;
 use system::*;
 
 
+#[tauri::command]
+async fn graceful_restart(app_handle: tauri::AppHandle) -> Result<(), String> {
+    println!("🔄 Reiniciando aplicação...");
+
+    // Verificar se já há uma instância rodando
+    let windows = app_handle.webview_windows();
+    println!("🔧 Janelas ativas antes do restart: {}", windows.len());
+
+    // Aguardar um pouco para garantir que tudo foi salvo
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    // Reiniciar o app
+    app_handle.restart();
+
+    // Este código nunca será executado, mas é necessário para o tipo de retorno
+    #[allow(unreachable_code)]
+    Ok(())
+}
+
+
+
+
 #[cfg(windows)]
 use window::remove_window_decorations;
 
 fn main() {
     println!("Iniciando aplicação Percolist...");
+
+    // Verificar se já há uma instância rodando
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        let output = Command::new("tasklist")
+            .args(["/FI", "IMAGENAME eq Percolist.exe"])
+            .output();
+
+        if let Ok(output) = output {
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            let instances = output_str.lines().filter(|line| line.contains("Percolist.exe")).count();
+            if instances > 1 {
+                println!("⚠️ Detectadas {} instâncias do Percolist rodando", instances);
+            }
+        }
+    }
 
     // Tentar configurar atalho global
     println!("Criando GlobalHotKeyManager...");
@@ -73,13 +112,41 @@ fn main() {
         connection: Arc::new(std::sync::Mutex::new(db_connection)),
     };
 
-    // Criar estado do servidor auth
     let auth_server_state = auth::AuthServerState::new();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .manage(db_state)
         .manage(auth_server_state)
-                                        .setup(|_app| {
+        .setup(|app| {
+            println!("🔧 App setup - Verificando janelas...");
+            let windows = app.webview_windows();
+            println!("🔧 Janelas ativas: {}", windows.len());
+
+                        let window_count = windows.len();
+            for (name, window) in &windows {
+                let title = window.title().unwrap_or_default();
+                let visible = window.is_visible().unwrap_or(false);
+                println!("🔧 Janela: {} - Visível: {} - Título: {:?}", name, visible, title);
+
+                // Verificar se há janelas extras com "Tauri" no título
+                if title.to_lowercase().contains("tauri") && name != "main" {
+                    println!("⚠️ JANELA EXTRA DETECTADA: {} - Título: {:?}", name, title);
+                }
+            }
+
+            // Verificar se há janelas extras
+            if window_count > 1 {
+                println!("⚠️ ATENÇÃO: Detectadas {} janelas extras!", window_count);
+                for (name, window) in &windows {
+                    if name != "main" {
+                        let title = window.title().unwrap_or_default();
+                        println!("⚠️ Janela extra: {} - Título: {:?}", name, title);
+                    }
+                }
+            }
+
             println!("🚀 App iniciado com sucesso!");
             Ok(())
         })
@@ -103,6 +170,7 @@ fn main() {
             get_task_by_id,
             increment_task_count,
             get_today_tasks,
+            get_active_task_id,
 
             // Tasks com sessões e Pomodoro
             start_task,
@@ -111,6 +179,9 @@ fn main() {
             resume_task,
             check_pomodoro_sessions,
             load_tasks_with_sessions_command,
+            get_task_pomodoro_cycles,
+            get_pomodoro_sessions_by_task,
+            update_pomodoro_session,
 
             // Time tracking
             get_task_remaining_time,
@@ -122,20 +193,41 @@ fn main() {
             // Window management
             toggle_collapse,
             get_collapsed_state,
+            get_collapsed_state_sync,
+            get_screen_width,
             test_hotkey_manually,
             expand_window_for_modal,
             reset_window_size,
             adjust_window_size,
-
+            enable_click_through,
+            disable_click_through,
             // System controls
             get_system_volume,
             set_system_volume,
             get_system_mute_status,
             toggle_system_mute,
+
+            // Update commands
+            graceful_restart,
         ])
         .setup(move |app| {
             let handle = app.handle();
             let window = handle.get_webview_window("main").unwrap();
+            window.set_decorations(false).unwrap();
+            // se quiser, também dá pra remover o título
+            window.set_title("").unwrap();
+
+
+
+            // Verificar janelas novamente no setup principal
+            let windows = app.webview_windows();
+            println!("🔧 Setup principal - Janelas ativas: {}", windows.len());
+            for (name, window) in &windows {
+                let title = window.title().unwrap_or_default();
+                if title.to_lowercase().contains("tauri") && name != "main" {
+                    println!("⚠️ JANELA TAURI EXTRA NO SETUP PRINCIPAL: {} - Título: {:?}", name, title);
+                }
+            }
 
             // Iniciar servidor auth com melhor tratamento de erro
             println!("🔧 Iniciando servidor de autenticação...");
@@ -165,7 +257,16 @@ fn main() {
 
             // Configurar janela
             window.set_decorations(false)?;
-            window.set_size(PhysicalSize::new(1920, 55))?;
+
+            // Obter largura da tela dinamicamente
+            let screen_width = if let Some(monitor) = window.current_monitor().ok().flatten() {
+                monitor.size().width
+            } else {
+                1920 // Fallback
+            };
+            println!("🔧 Configurando janela com largura: {}px", screen_width);
+
+            window.set_size(PhysicalSize::new(screen_width, 85))?;
             window.set_always_on_top(true)?;
 
             // Posicionar a janela
@@ -331,7 +432,7 @@ fn main() {
 
                             // Forçar o tamanho
                             let _ = Command::new("wmctrl")
-                                .args(["-i", "-r", window_id, "-e", "0,0,0,1920,55"])
+                                .args(["-i", "-r", window_id, "-e", "0,0,0,1920,75"])
                                 .output();
 
                             println!("Rust: Configurações wmctrl aplicadas");

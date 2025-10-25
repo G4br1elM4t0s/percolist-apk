@@ -1,38 +1,42 @@
 use crate::models::*;
 use crate::database::DatabaseState;
 use crate::tasks::time_tracking::debug_task_time_logs;
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, Result as SqliteResult, params};
 use tauri::State;
 use chrono::Utc;
 
-pub fn create_pomodoro_cycles(conn: &Connection, task_id: i64) -> Result<(), rusqlite::Error> {
-    // Criar ciclo padrão Pomodoro: 25min trabalho, 5min pausa, repetir 4x, depois 15min pausa longa
-    let cycles = [
-        ("work", 25 * 60),    // 25 min trabalho
-        ("break", 5 * 60),    // 5 min pausa
-        ("work", 25 * 60),    // 25 min trabalho
-        ("break", 5 * 60),    // 5 min pausa
-        ("work", 25 * 60),    // 25 min trabalho
-        ("break", 5 * 60),    // 5 min pausa
-        ("work", 25 * 60),    // 25 min trabalho
-        ("break", 15 * 60),   // 15 min pausa longa
-    ];
+pub fn create_pomodoro_cycles(conn: &Connection, task_id: i64, estimated_hours: f64, cycles: u32) -> SqliteResult<()> {
+    let total_minutes = (estimated_hours * 60.0).round() as i32;
+    let work_minutes = total_minutes / cycles as i32;
+    let mini_break_minutes = 5;
+    let long_break_minutes = 15;
 
+    let mut session_number = 1;
     let now = Utc::now().to_rfc3339();
 
-    for (i, (session_type, duration)) in cycles.iter().enumerate() {
+    for cycle in 1..=cycles {
         conn.execute(
-            "INSERT INTO pomodoro_sessions (task_id, session_number, session_type, duration_seconds, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            [
-                &task_id.to_string(),
-                &(i + 1).to_string(),
-                &session_type.to_string(),
-                &duration.to_string(),
-                &now
-            ],
+            "INSERT INTO pomodoro_sessions (task_id, session_number, session_type, duration_seconds, remaining_seconds, status, created_at)
+             VALUES (?1, ?2, 'work', ?3, ?3, 'pending', ?4)",
+            params![task_id, session_number, work_minutes * 60, &now],
         )?;
+        session_number += 1;
+
+        if cycle < cycles {
+            conn.execute(
+                "INSERT INTO pomodoro_sessions (task_id, session_number, session_type, duration_seconds, remaining_seconds, status, created_at)
+                 VALUES (?1, ?2, 'mini_break', ?3, ?3, 'pending', ?4)",
+                params![task_id, session_number, mini_break_minutes * 60, &now],
+            )?;
+            session_number += 1;
+        }
     }
+
+    conn.execute(
+        "INSERT INTO pomodoro_sessions (task_id, session_number, session_type, duration_seconds, remaining_seconds, status, created_at)
+         VALUES (?1, ?2, 'long_break', ?3, ?3, 'pending', ?4)",
+        params![task_id, session_number, long_break_minutes * 60, &now],
+    )?;
 
     Ok(())
 }
@@ -47,12 +51,20 @@ pub fn get_next_pomodoro_session(conn: &Connection, task_id: i64) -> Result<Opti
 
     // Se não existem sessões, criar os ciclos
     if count == 0 {
-        create_pomodoro_cycles(conn, task_id)?;
+        // Buscar estimated_hours da tarefa
+        let estimated_hours: f64 = conn.query_row(
+            "SELECT estimated_hours FROM tasks WHERE id = ?1",
+            [task_id],
+            |row| row.get(0),
+        )?;
+
+        // Criar 4 ciclos por padrão
+        create_pomodoro_cycles(conn, task_id, estimated_hours, 4)?;
     }
 
     // Buscar a próxima sessão disponível (menor session_number que não está em uso)
     let mut stmt = conn.prepare(
-        "SELECT ps.id, ps.task_id, ps.session_number, ps.session_type, ps.duration_seconds, ps.created_at
+        "SELECT ps.id, ps.task_id, ps.session_number, ps.session_type, ps.duration_seconds, ps.remaining_seconds, ps.status, ps.created_at
          FROM pomodoro_sessions ps
          WHERE ps.task_id = ?1 AND ps.id NOT IN (
              SELECT DISTINCT pomodoro_id FROM active_sessions WHERE task_id = ?1
@@ -68,7 +80,9 @@ pub fn get_next_pomodoro_session(conn: &Connection, task_id: i64) -> Result<Opti
             session_number: row.get(2)?,
             session_type: row.get(3)?,
             duration_seconds: row.get(4)?,
-            created_at: row.get(5)?,
+            remaining_seconds: row.get(5)?,
+            status: row.get(6)?,
+            created_at: row.get(7)?,
         })
     }).optional()?;
 
@@ -95,6 +109,12 @@ pub fn start_pomodoro_session(conn: &Connection, task_id: i64, pomodoro_session:
     conn.execute(
         "UPDATE tasks SET status = ?1 WHERE id = ?2",
         [status, &task_id.to_string()],
+    )?;
+
+    // Atualizar status da sessão Pomodoro para "running"
+    conn.execute(
+        "UPDATE pomodoro_sessions SET status = 'running' WHERE id = ?1",
+        [pomodoro_session.id.unwrap()],
     )?;
 
     Ok(status.to_string())
@@ -192,6 +212,12 @@ pub async fn start_task(task_id: i64, stop_and_start: Option<bool>, db_state: St
                 ).map_err(|e| e.to_string())?;
             }
 
+            // Atualizar status para 'in_progress' para que get_active_task_id funcione
+            conn.execute(
+                "UPDATE tasks SET status = 'in_progress' WHERE id = ?1",
+                [&task_id.to_string()],
+            ).map_err(|e| e.to_string())?;
+
             println!("Tarefa {} iniciada com sessão Pomodoro: {} ({})",
                 task_id, pomodoro_session.session_type, status);
         }
@@ -262,6 +288,20 @@ pub async fn pause_task(task_id: i64, db_state: State<'_, DatabaseState>) -> Res
         return Err("Nenhuma sessão Pomodoro ativa encontrada para pausar".to_string());
     }
 
+    // 🔧 PROTEÇÃO CRÍTICA: Verificar se o tempo foi atualizado recentemente
+    // Se não foi, usar o tempo calculado atual para evitar perda de precisão
+    let current_remaining: Option<i64> = conn.query_row(
+        "SELECT remaining_seconds FROM tasks WHERE id = ?1",
+        [task_id],
+        |row| row.get(0),
+    ).ok(); // Usar .ok() para não falhar se a coluna não existir
+
+    if let Some(remaining) = current_remaining {
+        println!("⏸️ Pausando tarefa {} com tempo atualizado: {}s", task_id, remaining);
+    } else {
+        println!("⏸️ Pausando tarefa {} - tempo não atualizado, usando cálculo padrão", task_id);
+    }
+
     // Finalizar log de tempo ANTES de remover sessão ativa (para evitar conflito com check_and_advance)
     let rows_updated = conn.execute(
         "UPDATE task_time_logs SET ended_at = ?1 WHERE task_id = ?2 AND ended_at IS NULL",
@@ -272,6 +312,13 @@ pub async fn pause_task(task_id: i64, db_state: State<'_, DatabaseState>) -> Res
 
     // Debug: mostrar logs após pausar
     let _ = debug_task_time_logs(&conn, task_id);
+
+    // Buscar o ID da sessão Pomodoro ativa para atualizar seu status
+    let pomodoro_id: Option<i64> = conn.query_row(
+        "SELECT pomodoro_id FROM active_sessions WHERE task_id = ?1",
+        [task_id],
+        |row| row.get(0),
+    ).ok();
 
     // Remover sessão ativa (pausa o Pomodoro) - fazer isso por último
     conn.execute(
@@ -284,6 +331,15 @@ pub async fn pause_task(task_id: i64, db_state: State<'_, DatabaseState>) -> Res
         "UPDATE tasks SET status = 'paused' WHERE id = ?1",
         [&task_id.to_string()],
     ).map_err(|e| e.to_string())?;
+
+    // Atualizar status da sessão Pomodoro para "paused"
+    if let Some(pomodoro_id) = pomodoro_id {
+        conn.execute(
+            "UPDATE pomodoro_sessions SET status = 'paused' WHERE id = ?1",
+            [pomodoro_id],
+        ).map_err(|e| e.to_string())?;
+        println!("⏸️ Sessão Pomodoro {} pausada", pomodoro_id);
+    }
 
     println!("Tarefa {} pausada - sessão Pomodoro interrompida", task_id);
     Ok(())
@@ -336,6 +392,12 @@ pub async fn resume_task(task_id: i64, db_state: State<'_, DatabaseState>) -> Re
             // Retomar com próxima sessão Pomodoro
             let status = start_pomodoro_session(&conn, task_id, &pomodoro_session)
                 .map_err(|e| e.to_string())?;
+
+            // Atualizar status da tarefa para 'in_progress' para que get_active_task_id funcione
+            conn.execute(
+                "UPDATE tasks SET status = 'in_progress' WHERE id = ?1",
+                [&task_id.to_string()],
+            ).map_err(|e| e.to_string())?;
 
             // Criar novo log de tempo apenas para sessões de trabalho
             if pomodoro_session.session_type == "work" {
