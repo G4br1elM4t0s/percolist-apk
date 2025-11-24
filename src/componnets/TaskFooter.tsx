@@ -312,13 +312,15 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
 
   const teste = async () => {
     if (isDrawerOpen) {
+      // await invoke("reset_window_size")
       await invoke("toggle_collapse", { isCollapsed: false })
-      // await invoke("disable_click_through")
+      // await invoke("enable_click_through")
       setIsDrawerOpen(false)
     } else {
       setIsDrawerOpen(true)
-      // await invoke("enable_click_through")
+      // await invoke("disable_click_through")
       await invoke("toggle_collapse", { isCollapsed: true })
+      //await invoke("expand_window_for_modal")
     }
   }
 
