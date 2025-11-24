@@ -16,10 +16,10 @@ import { CalendarStartIcon } from "../components/CalendarStartIcon"
 import { CirclePlusIcon } from "../components/CirclePlusIcon"
 import { PlusSuccessIcon } from "../components/PlusSuccessIcon"
 // import { getCurrentWebviewWindow, WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { useCollapsedState, usePomodoroFlow } from "../hooks";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { formatTimeDisplay } from "../utils/format";
-import { secondsToDuration } from "../utils/time";
+import { useCollapsedState, usePomodoroFlow } from "../hooks"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { formatTimeDisplay } from "../utils/format"
+import { secondsToDuration } from "../utils/time"
 
 interface TaskFooterProps {
   onAddClick: () => void
@@ -29,87 +29,86 @@ interface TaskFooterProps {
 
 const teste = [
   {
-      "id": 73,
-      "task_id": 10,
-      "session_number": 1,
-      "session_type": "work",
-      "duration_seconds": 60,
-      "remaining_seconds": 60,
-      "status": "running",
-      "created_at": "2025-08-11T11:50:33.840169600+00:00"
+    id: 73,
+    task_id: 10,
+    session_number: 1,
+    session_type: "work",
+    duration_seconds: 60,
+    remaining_seconds: 60,
+    status: "running",
+    created_at: "2025-08-11T11:50:33.840169600+00:00"
   },
   {
-      "id": 74,
-      "task_id": 10,
-      "session_number": 2,
-      "session_type": "mini_break",
-      "duration_seconds": 30,
-      "remaining_seconds": 30,
-      "status": "completed",
-      "created_at": "2025-08-11T11:50:33.840169600+00:00"
+    id: 74,
+    task_id: 10,
+    session_number: 2,
+    session_type: "mini_break",
+    duration_seconds: 30,
+    remaining_seconds: 30,
+    status: "completed",
+    created_at: "2025-08-11T11:50:33.840169600+00:00"
   },
   {
-      "id": 75,
-      "task_id": 10,
-      "session_number": 3,
-      "session_type": "work",
-      "duration_seconds": 60,
-      "remaining_seconds": 60,
-      "status": "paused",
-      "created_at": "2025-08-11T11:50:33.840169600+00:00"
+    id: 75,
+    task_id: 10,
+    session_number: 3,
+    session_type: "work",
+    duration_seconds: 60,
+    remaining_seconds: 60,
+    status: "paused",
+    created_at: "2025-08-11T11:50:33.840169600+00:00"
   },
   {
-      "id": 76,
-      "task_id": 10,
-      "session_number": 4,
-      "session_type": "mini_break",
-      "duration_seconds": 30,
-      "remaining_seconds": 30,
-      "status": "pending",
-      "created_at": "2025-08-11T11:50:33.840169600+00:00"
+    id: 76,
+    task_id: 10,
+    session_number: 4,
+    session_type: "mini_break",
+    duration_seconds: 30,
+    remaining_seconds: 30,
+    status: "pending",
+    created_at: "2025-08-11T11:50:33.840169600+00:00"
   },
   {
-      "id": 77,
-      "task_id": 10,
-      "session_number": 5,
-      "session_type": "work",
-      "duration_seconds": 60,
-      "remaining_seconds": 60,
-      "status": "pending",
-      "created_at": "2025-08-11T11:50:33.840169600+00:00"
+    id: 77,
+    task_id: 10,
+    session_number: 5,
+    session_type: "work",
+    duration_seconds: 60,
+    remaining_seconds: 60,
+    status: "pending",
+    created_at: "2025-08-11T11:50:33.840169600+00:00"
   },
   {
-      "id": 78,
-      "task_id": 10,
-      "session_number": 6,
-      "session_type": "mini_break",
-      "duration_seconds": 30,
-      "remaining_seconds": 30,
-      "status": "pending",
-      "created_at": "2025-08-11T11:50:33.840169600+00:00"
+    id: 78,
+    task_id: 10,
+    session_number: 6,
+    session_type: "mini_break",
+    duration_seconds: 30,
+    remaining_seconds: 30,
+    status: "pending",
+    created_at: "2025-08-11T11:50:33.840169600+00:00"
   },
   {
-      "id": 79,
-      "task_id": 10,
-      "session_number": 7,
-      "session_type": "work",
-      "duration_seconds": 60,
-      "remaining_seconds": 60,
-      "status": "pending",
-      "created_at": "2025-08-11T11:50:33.840169600+00:00"
+    id: 79,
+    task_id: 10,
+    session_number: 7,
+    session_type: "work",
+    duration_seconds: 60,
+    remaining_seconds: 60,
+    status: "pending",
+    created_at: "2025-08-11T11:50:33.840169600+00:00"
   },
   {
-      "id": 80,
-      "task_id": 10,
-      "session_number": 8,
-      "session_type": "long_break",
-      "duration_seconds": 60,
-      "remaining_seconds": 60,
-      "status": "pending",
-      "created_at": "2025-08-11T11:50:33.840169600+00:00"
+    id: 80,
+    task_id: 10,
+    session_number: 8,
+    session_type: "long_break",
+    duration_seconds: 60,
+    remaining_seconds: 60,
+    status: "pending",
+    created_at: "2025-08-11T11:50:33.840169600+00:00"
   }
 ]
-
 
 export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskFooterProps) {
   const {
@@ -127,10 +126,11 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
   const anchorRefButtonListTask = useRef<HTMLButtonElement | null>(null)
   const taskListViewRef = useRef<HTMLDivElement | null>(null)
   const { isCollapsed } = useCollapsedState()
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
 
   const queryClient = useQueryClient()
   // const { screenWidth } = useScreenWidth()
-  const disabledRef = useRef(false);
+  const disabledRef = useRef(false)
 
   // Otimizar cálculos com useMemo para evitar recálculos desnecessários
   const todayTasks = useMemo(() => {
@@ -195,7 +195,6 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
     setSelectedDate(null)
   }
 
-
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -255,75 +254,68 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
     }
   }
   useEffect(() => {
+    if (isDrawerOpen) return
     const interval = setInterval(async () => {
       try {
-
-        if(!isCollapsed){
-          await invoke("disable_click_through");
-          disabledRef.current = false;
+        if (!isCollapsed) {
+          await invoke("disable_click_through")
+          disabledRef.current = false
           return
         }
 
         if (disabledRef.current) {
-          await invoke("enable_click_through");
+          await invoke("enable_click_through")
         } else {
-          await invoke("disable_click_through");
+          await invoke("disable_click_through")
         }
 
-        disabledRef.current = !disabledRef.current;
+        disabledRef.current = !disabledRef.current
       } catch (err) {
-        console.error("Erro ao alternar click-through:", err);
+        console.error("Erro ao alternar click-through:", err)
       }
-    }, 500);
+    }, 500)
 
-    return () => clearInterval(interval);
-  }, [isCollapsed]);
+    return () => clearInterval(interval)
+  }, [isCollapsed, isDrawerOpen])
 
-
-  const {
-    data: activeTaskId,
-  } = useQuery<number | null>({
+  const { data: activeTaskId } = useQuery<number | null>({
     queryKey: ["active-task"],
-    queryFn: async ()=> {
-     const activeTaskId = await invoke<number | null>("get_active_task_id")
+    queryFn: async () => {
+      const activeTaskId = await invoke<number | null>("get_active_task_id")
 
-     console.log("activeTaskId", activeTaskId)
-     return activeTaskId
+      console.log("activeTaskId", activeTaskId)
+      return activeTaskId
     }
   })
 
   const { data: pomodoroSessionsData = [] } = useQuery({
     queryKey: ["active-pomodoro-sessions", activeTaskId],
     queryFn: async () => {
-      if (!activeTaskId) return [];
-      const rows = await invoke("get_pomodoro_sessions_by_task", { taskId: activeTaskId });
-      return Array.isArray(rows) ? rows : [];
+      if (!activeTaskId) return []
+      const rows = await invoke("get_pomodoro_sessions_by_task", { taskId: activeTaskId })
+      return Array.isArray(rows) ? rows : []
     },
-    enabled: !!activeTaskId,
-  });
+    enabled: !!activeTaskId
+  })
 
-  const {
-    sessions,
-    currentSession
-  } = usePomodoroFlow(pomodoroSessionsData, activeTaskId);
-  useEffect(()=>{
+  const { sessions, currentSession } = usePomodoroFlow(pomodoroSessionsData, activeTaskId)
+  useEffect(() => {
     console.log("pomodoroSessionsData", pomodoroSessionsData)
-  },[JSON.stringify(pomodoroSessionsData)])
+  }, [JSON.stringify(pomodoroSessionsData)])
 
   // Usar o hook usePomodoroFlow com as sessões carregadas
-  useEffect(()=>{
+  useEffect(() => {
     console.log("activeTaskIsssss", sessions)
-  },[JSON.stringify(sessions)])
+  }, [JSON.stringify(sessions)])
 
   // console.log("sessions", sessions)
 
-
-
-
-
-  const pomodoroCycles = sessions?.length > 0 ? sessions?.filter((session: any) => session.session_type === "work") : []
-  const pomodoroCyclesCompleted = pomodoroCycles?.length > 0 ? pomodoroCycles?.filter((session: any) => session.status === "completed") : []
-
+  const pomodoroCycles =
+    sessions?.length > 0 ? sessions?.filter((session: any) => session.session_type === "work") : []
+  const pomodoroCyclesCompleted =
+    pomodoroCycles?.length > 0
+      ? pomodoroCycles?.filter((session: any) => session.status === "completed")
+      : []
 
   return (
     <div style={{ padding: "0px 16px" }} className="w-full bg-black text-white  ">
@@ -334,28 +326,42 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
             <div className="w-44 h-auto   gap-1 flex items-center justify-between">
               <div className="flex flex-col items-center justify-center w-4/6">
                 <span className="text-[10px] font-bold text-white">POMODORO</span>
-                <div style={{
-                  padding: "4px"
-                }} className="flex items-center gap-1 bg-[#444444] w-full rounded-full">
+                <div
+                  style={{
+                    padding: "4px"
+                  }}
+                  className="flex items-center gap-1 bg-[#444444] w-full rounded-full"
+                >
                   <div className="w-6 h-6 flex items-center justify-center bg-[#17FF8B] rounded-full">
                     <ClockIcon className="w-6 h-6 text-white" />
                   </div>
-                  <span className="text-[10px] font-bold text-white">{pomodoroCyclesCompleted.length}/{pomodoroCycles.length}</span>
+                  <span className="text-[10px] font-bold text-white">
+                    {pomodoroCyclesCompleted.length}/{pomodoroCycles.length}
+                  </span>
                   <div className="text-[10px] font-bold text-white">|</div>
-                  <span className="text-[10px] font-bold text-[#17FF8B]">{formatTimeDisplay(secondsToDuration(currentSession?.remaining_seconds || 0))}</span>
+                  <span className="text-[10px] font-bold text-[#17FF8B]">
+                    {formatTimeDisplay(secondsToDuration(currentSession?.remaining_seconds || 0))}
+                  </span>
                 </div>
               </div>
               <div className="w-2/6  flex flex-col items-center justify-center">
                 <span className="text-[10px] text-white font-bold">TARREFAS</span>
-                <div style={{
-                  padding: "4px"
-                }}  className="flex items-center gap-1 bg-[#444444] w-full rounded-full h-8 justify-center">
-                <span  className="text-[10px] text-white font-bold flex items-center gap-1"><span className="text-[#17FF8B]">12</span> | 100</span>
+                <div
+                  style={{
+                    padding: "4px"
+                  }}
+                  className="flex items-center gap-1 bg-[#444444] w-full rounded-full h-8 justify-center"
+                >
+                  <span className="text-[10px] text-white font-bold flex items-center gap-1">
+                    <span className="text-[#17FF8B]">12</span> | 100
+                  </span>
                 </div>
               </div>
             </div>
             {orderedTasks.length === 0 ? (
-              <div className="text-gray-400 text-center flex items-center justify-center">Nenhuma tarefa para hoje</div>
+              <div className="text-gray-400 text-center flex items-center justify-center">
+                Nenhuma tarefa para hoje
+              </div>
             ) : (
               <>
                 {orderedTasks.slice(0, 5).map((task, index) => (
@@ -378,10 +384,9 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
 
         {/* System Section with Add Button */}
         <div className="flex items-center gap-4 flex-shrink-0">
-               {/* Pomodoro Controls */}
+          {/* Pomodoro Controls */}
 
-
-               {/* Add Button */}
+          {/* Add Button */}
           <button
             ref={buttonRef}
             onClick={onAddClick}
@@ -395,17 +400,13 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
             )}
           </button>
 
-            <div>
-              {currentSession?.remaining_seconds }
-              {
-                currentSession?.session_type
-              }
-              {
-                currentSession?.session_number
-              }
-            </div>
+          <div>
+            {currentSession?.remaining_seconds}
+            {currentSession?.session_type}
+            {currentSession?.session_number}
+          </div>
           {/* Task List View Button */}
-
+          {/* Menu de tasks */}
           <button
             ref={anchorRefButtonListTask}
             onClick={async () => {
@@ -416,37 +417,54 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
             title="Ver todas as tarefas"
           >
             <div className="w-4 h-4 flex items-center justify-center">
-              <div className={`absolute inset-0 flex items-center justify-center transition-all duration-300 ease-in-out ${
-                isTaskListViewOpen ? 'opacity-0 scale-90 rotate-12' : 'opacity-100 scale-100 rotate-0'
-              }`}>
+              <div
+                className={`absolute inset-0 flex items-center justify-center transition-all duration-300 ease-in-out ${
+                  isTaskListViewOpen
+                    ? "opacity-0 scale-90 rotate-12"
+                    : "opacity-100 scale-100 rotate-0"
+                }`}
+              >
                 <MenuDefaultIcon className="w-4 h-4 text-zinc-300" />
               </div>
 
-              <div className={`absolute inset-0 flex items-center justify-center transition-all duration-300 ease-in-out ${
-                isTaskListViewOpen ? 'opacity-100 scale-100 rotate-0' : 'opacity-0 scale-90 -rotate-12'
-              }`}>
+              <div
+                className={`absolute inset-0 flex items-center justify-center transition-all duration-300 ease-in-out ${
+                  isTaskListViewOpen
+                    ? "opacity-100 scale-100 rotate-0"
+                    : "opacity-0 scale-90 -rotate-12"
+                }`}
+              >
                 <MenuSuccessIcon className="w-4 h-4 text-[#17FF8B]" />
               </div>
             </div>
           </button>
 
-
-
           {/* Volume Control with Slider */}
           {/* <VolumeSlider /> */}
 
           {/* Date and Time */}
-          <div style={{ padding: "0px 10px" }} className="flex items-center justify-center bg-[#444444] rounded-full h-8 gap-3 text-sm">
+          <div
+            style={{ padding: "0px 10px" }}
+            className="flex items-center justify-center bg-[#444444] rounded-full h-8 gap-3 text-sm"
+          >
             <div className="relative">
               <div
                 className="flex items-center gap-1 cursor-pointer calendar-trigger"
                 onClick={toggleCalendar}
               >
                 <div className="relative w-6 h-6  select-none">
-                  <div className={`absolute inset-0 transition-all duration-500 ${isCalendarOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-90'}`}>
+                  <div
+                    className={`absolute inset-0 transition-all duration-500 ${
+                      isCalendarOpen ? "opacity-100 scale-100" : "opacity-0 scale-90"
+                    }`}
+                  >
                     <CalendarStartIcon className="w-6 h-6 text-[#17FF8B]" />
                   </div>
-                  <div className={`absolute inset-0 transition-all duration-500 ${!isCalendarOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-90'}`}>
+                  <div
+                    className={`absolute inset-0 transition-all duration-500 ${
+                      !isCalendarOpen ? "opacity-100 scale-100" : "opacity-0 scale-90"
+                    }`}
+                  >
                     <CalendarIcon className="w-6 h-6 text-white" />
                   </div>
                 </div>
@@ -495,7 +513,8 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
             <span className="border-x border-[#7F7F7F] h-6 "></span>
             <div className="flex items-center gap-1 selected-none">
               <span className="font-medium select-none text-xs">
-                {currentTime.toLocaleDateString("pt-BR", { weekday: "short" }).toUpperCase()} {currentTime.toLocaleTimeString("pt-BR", {
+                {currentTime.toLocaleDateString("pt-BR", { weekday: "short" }).toUpperCase()}{" "}
+                {currentTime.toLocaleTimeString("pt-BR", {
                   hour: "2-digit",
                   minute: "2-digit"
                 })}
@@ -503,19 +522,25 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
             </div>
           </div>
         </div>
-      <div
-        id="myDiv"
-        onClick={async () => {
-          await invoke("disable_click_through");
-          await invoke("expand_window_for_modal");
-        }}
-
-        className="absolute top-[45px] left-1/2 transform -translate-x-1/2
+        <div
+          id="myDiv"
+          onClick={async () => {
+            if (isDrawerOpen) {
+              await invoke("reset_window_size")
+              await invoke("enable_click_through")
+              setIsDrawerOpen(false)
+            } else {
+              setIsDrawerOpen(true)
+              await invoke("disable_click_through")
+              await invoke("expand_window_for_modal")
+            }
+          }}
+          className="absolute top-[45px] left-1/2 transform -translate-x-1/2
                   bg-black text-white p-4 h-5 w-16 z-50 rounded-lg
                   flex items-center justify-center text-xs cursor-pointer hover:bg-red-800"
-      >
-        Abrir
-      </div>
+        >
+          {isDrawerOpen ? "Fechar" : "Abrir"}
+        </div>
       </div>
 
       {/* Task List View Modal */}
