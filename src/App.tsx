@@ -60,6 +60,7 @@ function App() {
   const { loadTasks, loadTasksWithSessions } = useTaskStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const hasInitialized = useRef(false)
   useAuthReleaseAndBlock()
 
   // Ref para ajuste automático de altura
@@ -72,6 +73,9 @@ function App() {
   useAuthListener()
 
   useEffect(() => {
+    if (hasInitialized.current) return
+
+    hasInitialized.current = true
     const init = async () => {
       await Promise.all([loadTasks(), loadTasksWithSessions()])
       // Verificar atualizações na inicialização
