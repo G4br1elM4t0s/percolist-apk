@@ -330,7 +330,7 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
                   style={{
                     padding: "4px"
                   }}
-                  className="flex items-center gap-1 bg-[#444444] w-full rounded-full"
+                  className="select-none flex items-center gap-1 bg-[#444444] w-full rounded-full"
                 >
                   <div className="w-6 h-6 flex items-center justify-center bg-[#17FF8B] rounded-full">
                     <ClockIcon className="w-6 h-6 text-white" />
@@ -350,7 +350,7 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
                   style={{
                     padding: "4px"
                   }}
-                  className="flex items-center gap-1 bg-[#444444] w-full rounded-full h-8 justify-center"
+                  className="select-none flex items-center gap-1 bg-[#444444] w-full rounded-full h-8 justify-center"
                 >
                   <span className="text-[10px] text-white font-bold flex items-center gap-1">
                     <span className="text-[#17FF8B]">12</span> | 100
@@ -535,7 +535,7 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
               await invoke("expand_window_for_modal")
             }
           }}
-          className="absolute top-[45px] left-1/2 transform -translate-x-1/2
+          className="select-none absolute top-[45px] left-1/2 transform -translate-x-1/2
                   bg-black text-white p-4 h-5 w-16 z-50 rounded-lg
                   flex items-center justify-center text-xs cursor-pointer hover:bg-red-800"
         >
