@@ -310,6 +310,18 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
 
   // console.log("sessions", sessions)
 
+  const teste = async () => {
+    if (isDrawerOpen) {
+      await invoke("toggle_collapse", { isCollapsed: false })
+      // await invoke("disable_click_through")
+      setIsDrawerOpen(false)
+    } else {
+      setIsDrawerOpen(true)
+      // await invoke("enable_click_through")
+      await invoke("toggle_collapse", { isCollapsed: true })
+    }
+  }
+
   const pomodoroCycles =
     sessions?.length > 0 ? sessions?.filter((session: any) => session.session_type === "work") : []
   const pomodoroCyclesCompleted =
@@ -524,17 +536,7 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
         </div>
         <div
           id="myDiv"
-          onClick={async () => {
-            if (isDrawerOpen) {
-              await invoke("reset_window_size")
-              await invoke("enable_click_through")
-              setIsDrawerOpen(false)
-            } else {
-              setIsDrawerOpen(true)
-              await invoke("disable_click_through")
-              await invoke("expand_window_for_modal")
-            }
-          }}
+          onClick={teste}
           className="select-none absolute top-[45px] left-1/2 transform -translate-x-1/2
                   bg-black text-white p-4 h-5 w-16 z-50 rounded-lg
                   flex items-center justify-center text-xs cursor-pointer hover:bg-red-800"
