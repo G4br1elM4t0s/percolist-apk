@@ -363,7 +363,7 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
                 Nenhuma tarefa para hoje
               </div>
             ) : (
-              <>
+              <div className="flex gap-2 translate-y-2">
                 {orderedTasks.slice(0, 5).map((task, index) => (
                   <TaskButton
                     key={task.id}
@@ -373,11 +373,11 @@ export function TaskFooter({ onAddClick, buttonRef, isModalOpen = false }: TaskF
                   />
                 ))}
                 {orderedTasks.length > 5 && (
-                  <div className="flex items-center justify-center min-w-[60px] text-white rounded-lg text-xl font-bold ">
+                  <div className="flex items-center justify-center min-w-[60px] text-white rounded-lg text-xl font-bold">
                     +{orderedTasks.length - 5}
                   </div>
                 )}
-              </>
+              </div>
             )}
           </div>
         </div>
