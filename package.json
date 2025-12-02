@@ -21,10 +21,10 @@
     "axios": "^1.11.0",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.513.0",
-    "react": "^18.3.1",
+    "react": "^19.1.0",
     "react-beautiful-dnd": "^13.1.1",
     "react-day-picker": "^9.7.0",
-    "react-dom": "^18.3.1",
+    "react-dom": "^19.1.0",
     "tailwind-scrollbar": "^4.0.2",
     "uuid": "^11.1.0",
     "zustand": "^5.0.5"
